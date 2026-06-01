@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "realtime-voice-prototype-server"
+version = "0.1.0"
+description = "Local realtime voice session coordinator."
+requires-python = ">=3.11"
+dependencies = [
+  "fastapi>=0.115,<1.0",
+  "uvicorn[standard]>=0.32,<1.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.3,<9.0",
+  "httpx>=0.27,<1.0",
+]
+asr = [
+  "funasr>=1.2,<2.0",
+  "modelscope>=1.20,<2.0",
+  "numpy>=1.26,<3.0",
+  "torch",
+  "torchaudio",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

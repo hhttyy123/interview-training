@@ -1,0 +1,11 @@
+fastapi<1.0,>=0.115
+uvicorn[standard]<1.0,>=0.32
+
+[asr]
+funasr<2.0,>=1.2
+modelscope<2.0,>=1.20
+numpy<3.0,>=1.26
+
+[dev]
+pytest<9.0,>=8.3
+httpx<1.0,>=0.27
