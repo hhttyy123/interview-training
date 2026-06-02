@@ -8,6 +8,7 @@ from dotenv import load_dotenv
 from livekit import api, rtc
 
 from interview import InterviewEvaluator, InterviewOrchestrator
+from interview.configs import TRAINING_OPTIONS
 from local_providers import (
     ConversationMessage,
     DeepSeekStreamingTextProvider,
@@ -96,6 +97,14 @@ def training_config_from_event(event: dict[str, object]) -> dict[str, str]:
     }
 
 
+def option_label(group: str, option_id: str) -> str:
+    options = TRAINING_OPTIONS.get(group, [])
+    for item in options:
+        if item.get("id") == option_id:
+            return str(item.get("label", option_id))
+    return option_id
+
+
 async def main() -> None:
     logger.info("preloading FunASR model")
     await preload_shared_funasr_model()
@@ -126,7 +135,6 @@ async def main() -> None:
             return
         if publication.sid in audio_tasks and not audio_tasks[publication.sid].done():
             return
-
         task = asyncio.create_task(
             process_candidate_audio(room, track, publication, messages, llm_provider, orchestrator, evaluator, control)
         )
@@ -172,10 +180,25 @@ async def main() -> None:
             if control.started and not control.ended:
                 return
             messages.clear()
-            orchestrator.configure(**training_config_from_event(event))
+            training_config = training_config_from_event(event)
+            orchestrator.configure(**training_config)
             control.started = True
             control.ended = False
             control.finishing = False
+            asyncio.create_task(
+                publish_json(
+                    room,
+                    {
+                        "type": "session.configured",
+                        "modeId": training_config["mode_id"],
+                        "modeLabel": option_label("modes", training_config["mode_id"]),
+                        "competencyId": training_config["competency_id"],
+                        "competencyLabel": option_label("competencies", training_config["competency_id"]),
+                        "strategyId": training_config["strategy_id"],
+                        "strategyLabel": option_label("strategies", training_config["strategy_id"]),
+                    },
+                )
+            )
             asyncio.create_task(publish_json(room, {"type": "assistant.text.done", "text": orchestrator.opening_question}))
         elif event_type == "end_turn":
             control.force_finalize.set()
@@ -298,12 +321,7 @@ async def process_candidate_audio(
             elif action.action is TurnAction.HINT:
                 await publish_json(
                     room,
-                    {
-                        "type": "turn.hint",
-                        "text": action.hint_text,
-                        "waitMs": action.wait_ms,
-                        "reason": action.reason,
-                    },
+                    {"type": "turn.hint", "text": action.hint_text, "waitMs": action.wait_ms, "reason": action.reason},
                 )
 
         if not finalizing and turn_action is TurnAction.END:
@@ -367,19 +385,29 @@ async def finish_interview(
         except Exception as error:
             logger.exception("interview evaluation failed")
             report = {
+                "report_quality": "fallback",
                 "summary": f"评分生成失败：{error}",
+                "turn_count": orchestrator.state.candidate_turn_count,
+                "coverage_ratio": round(orchestrator.coverage_ratio(), 2),
+                "ability_model": {},
                 "dimensions": [],
-                "main_weakness": "请查看后端日志。",
+                "evidence_gaps": ["评分链路异常，需要查看后端日志"],
+                "main_weakness": "当前不是候选人表现问题，而是评分链路异常。",
                 "training_plan": {
                     "theme": "评分链路排查",
                     "goal": "确认 DeepSeek 与 JSON 评分输出是否正常。",
-                    "exercise": "重新完成一轮短面试后查看调试台。",
-                    "method": "先用 1-2 轮短回答测试。",
+                    "tasks": [
+                        {
+                            "name": "重新生成评分",
+                            "exercise": "重新完成一轮短面试后查看调试台和后端日志。",
+                            "method": "先用 1-2 轮短回答测试评分事件是否返回。",
+                            "success_criteria": "前端收到 interview.report，且 report_quality 不再是 fallback。",
+                        }
+                    ],
                     "duration_minutes": 5,
                 },
             }
         await publish_json(room, {"type": "interview.report", "report": report})
-        await publish_json(room, {"type": "assistant.text.done", "text": orchestrator.closing_text()})
         await publish_json(room, {"type": "session.ended", "text": "本轮面试已结束，评分和训练建议已生成。"})
     finally:
         if control:

@@ -51,14 +51,26 @@ interface ConversationEntry {
   time: string;
 }
 
+interface DebugEvent {
+  id: number;
+  text: string;
+}
+
 interface InterviewReport {
+  report_quality?: "full" | "fallback" | "insufficient_sample" | string;
   summary?: string;
+  turn_count?: number;
+  coverage_ratio?: number;
+  ability_model?: Record<string, number>;
+  evidence_gaps?: string[];
   dimensions?: Array<{
     id: string;
     name: string;
     score: number;
+    level?: string;
     reason: string;
     evidence: string;
+    risk?: string;
     improvement: string;
   }>;
   main_weakness?: string;
@@ -68,6 +80,13 @@ interface InterviewReport {
     exercise?: string;
     method?: string;
     duration_minutes?: number;
+    tasks?: Array<{
+      name?: string;
+      exercise?: string;
+      method?: string;
+      success_criteria?: string;
+    }>;
+    next_interview_focus?: string;
   };
 }
 
@@ -316,13 +335,14 @@ function InterviewRoom({
   const livekitRoom = useRoomContext();
   const stateText = assistant.state || "connecting";
   const phaseRef = useRef<SessionPhase>("idle");
+  const debugEventSeqRef = useRef(0);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const objectUrlRef = useRef<string | null>(null);
   const [partialTranscript, setPartialTranscript] = useState("");
   const [finalTranscript, setFinalTranscript] = useState("");
   const [assistantText, setAssistantText] = useState("");
   const [assistantState, setAssistantState] = useState("已进入房间，点击开始会话");
-  const [debugEvents, setDebugEvents] = useState<string[]>([]);
+  const [debugEvents, setDebugEvents] = useState<DebugEvent[]>([]);
   const [conversation, setConversation] = useState<ConversationEntry[]>([]);
   const [livekitConnected, setLivekitConnected] = useState(false);
   const [phase, setPhaseState] = useState<SessionPhase>("idle");
@@ -337,7 +357,16 @@ function InterviewRoom({
   }
 
   function addDebugEvent(event: string) {
-    setDebugEvents((current) => [`${new Date().toLocaleTimeString()} ${event}`, ...current].slice(0, 12));
+    debugEventSeqRef.current += 1;
+    setDebugEvents((current) =>
+      [
+        {
+          id: debugEventSeqRef.current,
+          text: `${new Date().toLocaleTimeString()} ${event}`,
+        },
+        ...current,
+      ].slice(0, 12),
+    );
   }
 
   function addConversationEntry(role: ConversationEntry["role"], text: string) {
@@ -386,12 +415,19 @@ function InterviewRoom({
   async function endSession() {
     setPhase("thinking");
     setAssistantState("正在结束本轮并生成评分");
+    audioRef.current?.pause();
+    if (objectUrlRef.current) {
+      URL.revokeObjectURL(objectUrlRef.current);
+      objectUrlRef.current = null;
+    }
     await setMicEnabled(false);
+    await sendControl("assistant_done");
     await sendControl("end_session");
   }
 
   async function resumeListening(reason: string) {
     if (phaseRef.current === "ended") return;
+    if (interviewReport) return;
     setPhase("listening");
     setAssistantState(reason);
     await setMicEnabled(true);
@@ -455,6 +491,12 @@ function InterviewRoom({
         text?: string;
         state?: string;
         reason?: string;
+        modeId?: string;
+        modeLabel?: string;
+        competencyId?: string;
+        competencyLabel?: string;
+        strategyId?: string;
+        strategyLabel?: string;
         rms?: number;
         report?: InterviewReport;
       };
@@ -470,6 +512,13 @@ function InterviewRoom({
       }
 
       if (event.type === "session.ready") setAssistantState("AI 面试官已准备好，点击开始会话");
+      if (event.type === "session.configured") {
+        addDebugEvent(
+          `配置已应用：${event.modeLabel || event.modeId} / ${event.competencyLabel || event.competencyId} / ${
+            event.strategyLabel || event.strategyId
+          }`,
+        );
+      }
       if (event.type === "session.ended") {
         setPhase("ended");
         setAssistantState(event.text || "本轮面试已结束");
@@ -507,6 +556,8 @@ function InterviewRoom({
       if (event.type === "interview.report") {
         setInterviewReport(event.report || null);
         setShowDebug(false);
+        setPhase("ended");
+        void setMicEnabled(false);
         setAssistantState("评分和训练建议已生成");
         addDebugEvent("已收到面试评分报告");
       }
@@ -514,6 +565,10 @@ function InterviewRoom({
       if (event.type === "assistant.text.done") {
         const text = event.text || "";
         setAssistantText(text);
+        if (phaseRef.current === "ended" || interviewReport) {
+          addConversationEntry("assistant", text);
+          return;
+        }
         setAssistantState("正在准备 AI 语音");
         addConversationEntry("assistant", text);
         void playTts(text);
@@ -571,7 +626,7 @@ function InterviewRoom({
       audioRef.current?.pause();
       if (objectUrlRef.current) URL.revokeObjectURL(objectUrlRef.current);
     };
-  }, [livekitRoom, trainingConfig]);
+  }, [livekitRoom, trainingConfig, interviewReport]);
 
   const controlsDisabled = phase === "listening" || phase === "thinking" || phase === "speaking";
 
@@ -580,7 +635,7 @@ function InterviewRoom({
       <header className="room-header call-header">
         <div>
           <p className="eyebrow">AI INTERVIEW CALL</p>
-          <h1>产品经理模拟面试</h1>
+          <h1>模拟面试系统</h1>
         </div>
         <div className="header-actions">
           <span className="pill">{livekitConnected ? "房间已连接" : "正在连接"}</span>
@@ -694,8 +749,8 @@ function InterviewRoom({
               <p className="empty">还没有完整转写。你说完一句后，这里会保留你的回答和 AI 追问。</p>
             ) : (
               <ul>
-                {conversation.map((item) => (
-                  <li key={`${item.time}-${item.role}-${item.text}`}>
+                {conversation.map((item, index) => (
+                  <li key={`${item.time}-${item.role}-${index}`}>
                     <span>{item.role === "candidate" ? "你" : "AI"}</span>
                     <p>{item.text}</p>
                     <time>{item.time}</time>
@@ -714,7 +769,7 @@ function InterviewRoom({
             ) : (
               <ul>
                 {debugEvents.map((event) => (
-                  <li key={event}>{event}</li>
+                  <li key={event.id}>{event.text}</li>
                 ))}
               </ul>
             )}
@@ -729,27 +784,80 @@ function InterviewRoom({
   );
 }
 
+const ABILITY_LABELS: Record<string, string> = {
+  answer_structure: "回答结构",
+  experience_evidence: "经历证据",
+  job_understanding: "岗位理解",
+  project_delivery: "项目推进",
+  expression_clarity: "表达清晰",
+};
+
+function reportQualityText(report: InterviewReport): string {
+  if (report.report_quality === "insufficient_sample") return "样本不足，暂不生成正式评分";
+  if (report.report_quality === "fallback") return "规则兜底报告，可信度较低";
+  return "正式评分报告";
+}
+
 function InterviewReportPanel({ report, compact = false }: { report: InterviewReport; compact?: boolean }) {
+  const abilityEntries = Object.entries(report.ability_model ?? {});
+  const tasks = report.training_plan?.tasks ?? [];
+
   return (
     <section className={compact ? "report-card compact-report" : "report-card"}>
       <div className="history-title">
         <p className="label">评分报告</p>
-        <span>训练建议</span>
+        <span>{reportQualityText(report)}</span>
+      </div>
+      <div className="report-meta">
+        <span>回答轮次：{report.turn_count ?? 0}</span>
+        <span>证据覆盖：{Math.round((report.coverage_ratio ?? 0) * 100)}%</span>
       </div>
       <p className="report-summary">{report.summary || "本轮评分已生成。"}</p>
+
+      {abilityEntries.length > 0 && (
+        <div className="ability-bars" aria-label="能力模型">
+          {abilityEntries.map(([id, score]) => (
+            <div key={id} className="ability-row">
+              <span>{ABILITY_LABELS[id] ?? id}</span>
+              <div className="ability-track">
+                <i style={{ width: `${Math.max(8, Math.min(100, (score / 10) * 100))}%` }} />
+              </div>
+              <b>{score}/10</b>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {!compact && report.evidence_gaps && report.evidence_gaps.length > 0 && (
+        <div className="gap-card">
+          <b>证据缺口</b>
+          <ul>
+            {report.evidence_gaps.map((gap) => (
+              <li key={gap}>{gap}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       {!compact && report.dimensions && report.dimensions.length > 0 && (
         <div className="score-grid">
           {report.dimensions.map((item) => (
             <article key={item.id} className="score-card">
               <div className="score-head">
                 <strong>{item.name}</strong>
-                <span>{item.score}/5</span>
+                <span>{item.score}/10{item.level ? ` · ${item.level}` : ""}</span>
               </div>
               <p>{item.reason}</p>
               <p>
                 <b>依据：</b>
                 {item.evidence}
               </p>
+              {item.risk && (
+                <p>
+                  <b>风险：</b>
+                  {item.risk}
+                </p>
+              )}
               <p>
                 <b>改进：</b>
                 {item.improvement}
@@ -758,26 +866,46 @@ function InterviewReportPanel({ report, compact = false }: { report: InterviewRe
           ))}
         </div>
       )}
+
       <div className="plan-card">
         <p>
           <b>主要短板：</b>
           {report.main_weakness || "暂无"}
         </p>
         <p>
-          <b>下一轮主题：</b>
+          <b>训练主题：</b>
           {report.training_plan?.theme || "暂无"}
         </p>
-        <p>
-          <b>练习题：</b>
-          {report.training_plan?.exercise || "暂无"}
-        </p>
-        {!compact && (
+        {report.training_plan?.goal && (
           <p>
-            <b>方法：</b>
-            {report.training_plan?.method || "暂无"}
-            {report.training_plan?.duration_minutes ? ` · ${report.training_plan.duration_minutes} 分钟` : ""}
+            <b>训练目标：</b>
+            {report.training_plan.goal}
           </p>
         )}
+        {tasks.length > 0 ? (
+          <div className="task-list">
+            {tasks.map((task, index) => (
+              <article key={`${task.name ?? "task"}-${index}`}>
+                <strong>{task.name || `训练任务 ${index + 1}`}</strong>
+                <p>{task.exercise || "暂无练习题"}</p>
+                {!compact && <p>{task.method || "暂无训练方法"}</p>}
+                {!compact && task.success_criteria && <small>达标：{task.success_criteria}</small>}
+              </article>
+            ))}
+          </div>
+        ) : (
+          <p>
+            <b>练习题：</b>
+            {report.training_plan?.exercise || "暂无"}
+          </p>
+        )}
+        {!compact && report.training_plan?.next_interview_focus && (
+          <p>
+            <b>下一轮重点：</b>
+            {report.training_plan.next_interview_focus}
+          </p>
+        )}
+        {!compact && report.training_plan?.duration_minutes ? <p>建议训练时长：{report.training_plan.duration_minutes} 分钟</p> : null}
       </div>
     </section>
   );
