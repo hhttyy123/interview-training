@@ -171,12 +171,15 @@ class DeepSeekStreamingTextProvider:
 async def synthesize_edge_tts(text: str, *, voice: str = "zh-CN-XiaoxiaoNeural", rate: str = "+18%") -> bytes:
     import edge_tts
 
-    communicate = edge_tts.Communicate(text, voice, rate=rate)
-    audio = bytearray()
-    async for chunk in communicate.stream():
-        if chunk["type"] == "audio":
-            audio.extend(chunk["data"])
-    return bytes(audio)
+    async def collect_audio() -> bytes:
+        communicate = edge_tts.Communicate(text, voice, rate=rate)
+        audio = bytearray()
+        async for chunk in communicate.stream():
+            if chunk["type"] == "audio":
+                audio.extend(chunk["data"])
+        return bytes(audio)
+
+    return await asyncio.wait_for(collect_audio(), timeout=20)
 
 
 def pcm_rms(pcm_bytes: bytes) -> float:

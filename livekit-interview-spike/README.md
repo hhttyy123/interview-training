@@ -1,34 +1,39 @@
-# LiveKit Interview Spike
+# AI 面试训练实时语音版
 
-独立 LiveKit 测试项目，不依赖也不修改 `realtime-voice-prototype`。
+这是当前项目的实时语音主线版本。它用 LiveKit 负责音频房间，用本地 FunASR 做转写，用 DeepSeek 生成面试追问，用 Edge TTS 播放 AI 语音。
 
-目标是快速验证：
+当前目标不是做通用聊天机器人，而是验证“公司岗位级 AI 面试训练教练”的核心体验：候选人自然说话，系统自动判断一轮回答是否结束，AI 以面试官方式继续追问，并在调试台保留可观察日志。
 
-- 浏览器进入一个 LiveKit 语音面试房间。
-- AI 面试官用语音提问。
-- 用户持续语音回答。
-- LiveKit Agents 负责 STT -> LLM -> TTS 管线、VAD、turn detection 和打断。
-- 当前只做语音面试体验 spike，不做简历/JD/评分/持久化。
+## 当前能力
 
-## 当前技术组合
+- 本地 LiveKit 房间：浏览器进入同一个语音房间，麦克风音频交给本地 agent。
+- 本地 ASR：FunASR 流式识别候选人回答。
+- 自动轮次判断：结合音量门控、转写稳定时间、规则式结束判断和手动兜底按钮。
+- LLM 面试官：DeepSeek 根据对话历史生成下一句中文追问。
+- TTS 播放：前端请求 token server 的 `/tts`，用 Edge TTS 生成并播放 AI 语音。
+- 双界面：主界面像语音通话，只保留 AI 动态球和用户音浪；调试台展示转写、AI 文本、事件日志和服务状态。
 
-- LiveKit 本地：音频房间与浏览器麦克风连接。
-- FunASR 本地：用户语音转写。
-- DeepSeek API：AI 面试官追问。
-- Edge TTS：AI 文字回复转语音。
+## 技术结构
 
-这个版本不使用 OpenAI Realtime，也不使用 LiveKit Inference、Deepgram、Cartesia。
+```text
+livekit-interview-spike/
+  bin/                    # 本地 LiveKit server，可本机运行
+  docs/                   # 项目技术债和后续规划
+  scripts/start-dev.ps1   # Windows 本地四服务启动脚本
+  server/
+    agent.py              # LiveKit agent，处理音频、转写、轮次和 LLM
+    local_providers.py    # FunASR、DeepSeek、Edge TTS provider
+    token_server.py       # token、health、tts HTTP 服务
+    turn_completion.py    # 回答结束判断
+    turn_controller.py    # 轮次状态机
+  web/
+    src/main.tsx          # React 前端
+    src/styles.css        # 主通话界面和调试台样式
+```
 
-## 你需要准备
+## 环境准备
 
-- 本地 LiveKit server。Windows 没有 Docker 也可以直接用 `livekit-server.exe`。
-- Python 3.11+。
-- Node.js 20+。
-- DeepSeek API Key。
-
-如果暂时没有 DeepSeek Key，也能启动，但 AI 会提示你缺少 `DEEPSEEK_API_KEY`。
-
-## 启动步骤
+项目需要 Python 3.11、Node.js 20+、本地 LiveKit server，以及 DeepSeek API Key。
 
 复制环境变量：
 
@@ -37,123 +42,67 @@ cd D:\面试训练\livekit-interview-spike
 Copy-Item .env.example .env
 ```
 
-编辑 `.env`，填入真实 LiveKit 配置。
-
-本地 LiveKit 默认可以先保持：
+本地开发默认 LiveKit 配置：
 
 ```env
 LIVEKIT_URL=ws://localhost:7880
 LIVEKIT_API_KEY=devkey
 LIVEKIT_API_SECRET=secret
+LIVEKIT_ROOM=interview-spike-room
 ```
 
-同时填入：
+还需要在 `.env` 里配置：
 
 ```env
 DEEPSEEK_API_KEY=你的 DeepSeek Key
 ```
 
-### 启动本地 LiveKit server
+## 启动方式
 
-推荐 Windows 方式：下载 `livekit-server.exe` 后直接运行。
-
-1. 打开 LiveKit releases：
-
-```text
-https://github.com/livekit/livekit/releases
-```
-
-2. 下载 Windows amd64 版本，解压后把 `livekit-server.exe` 放到：
-
-```text
-D:\面试训练\livekit-interview-spike\bin\livekit-server.exe
-```
-
-3. 启动本地 LiveKit：
-
-```powershell
-cd D:\面试训练\livekit-interview-spike
-.\bin\livekit-server.exe --dev --bind 0.0.0.0
-```
-
-看到类似 `listening on :7880` 后，再启动 token server 和 agent。
-
-如果你有可用 Docker，也可以用：
-
-```powershell
-cd D:\面试训练\livekit-interview-spike
-docker compose up
-```
-
-如果 Docker 拉镜像失败，优先使用上面的 `livekit-server.exe` 方式。
-
-安装 Python 依赖：
-
-```powershell
-cd D:\面试训练\livekit-interview-spike\server
-python -m venv .venv
-.\.venv\Scripts\python -m pip install -r requirements.txt
-.\.venv\Scripts\python -m livekit.agents download-files
-```
-
-启动 token server：
-
-```powershell
-cd D:\面试训练\livekit-interview-spike\server
-.\.venv\Scripts\python -m uvicorn token_server:app --host 127.0.0.1 --port 8787
-```
-
-再开一个终端，启动本地 AI Agent：
-
-```powershell
-cd D:\面试训练\livekit-interview-spike\server
-.\.venv\Scripts\python agent.py
-```
-
-再开一个终端，启动前端：
-
-```powershell
-cd D:\面试训练\livekit-interview-spike\web
-npm install
-npm run dev
-```
-
-打开 Vite 显示的地址，通常是：
-
-```text
-http://localhost:5173
-```
-
-如果你已经安装过依赖，也可以用一键启动脚本分别拉起 4 个窗口：
+一键启动四个窗口：
 
 ```powershell
 cd D:\面试训练\livekit-interview-spike
 .\scripts\start-dev.ps1
 ```
 
-## 预期体验
+也可以手动分四步启动：
 
-- 点击“进入面试室”后，浏览器请求本地 token server。
-- 前端连接本地 LiveKit 房间并打开麦克风。
-- 本地 Agent 主动加入固定房间 `interview-spike-room`，订阅用户音频，用 FunASR 做转写。
-- Agent 用 DeepSeek 生成面试官追问。
-- Agent 通过 LiveKit data channel 把转写和 AI 文本发给前端。
-- 前端请求本地 token server 的 `/tts`，用 Edge TTS 播放 AI 语音。
+```powershell
+cd D:\面试训练\livekit-interview-spike
+.\bin\livekit-server.exe --dev --bind 0.0.0.0
+```
 
-## 当前边界
+```powershell
+cd D:\面试训练\livekit-interview-spike\server
+.\.venv\Scripts\python -m uvicorn token_server:app --host 127.0.0.1 --port 8787
+```
 
-- 这是 LiveKit spike，不是正式产品代码。
-- 当前没有使用 LiveKit Inference。
-- 面试官 prompt 已按“公司岗位级 AI 求职训练教练”方向写入。
-- 没有接入当前项目的能力图谱、JD、简历、结构化反馈。
-- 后续如果体验 OK，再把业务层抽成 `Interview Orchestrator` 接进去。
-- AI 语音目前由浏览器本地播放，不是以 LiveKit audio track 发布给房间。
-- 当前 turn detection 是 spike 级静音阈值，后续还需要接入更稳的 VAD/turn controller。
+```powershell
+cd D:\面试训练\livekit-interview-spike\server
+.\.venv\Scripts\python agent.py
+```
 
-## 验收重点
+```powershell
+cd D:\面试训练\livekit-interview-spike\web
+npm run dev
+```
 
-- 停止说话后，AI 是否比旧链路更快接话。
-- AI 说话时插话，是否能更自然中断。
-- 尾字转写是否比旧链路稳定。
-- 语音播放是否仍有明显卡顿。
-- 浏览器麦克风状态是否比旧链路更稳定。
+打开 Vite 显示的地址，通常是 `http://localhost:5173`。
+
+## 判断是否正常
+
+- LiveKit server 看到 `starting LiveKit server`。
+- Agent 看到 `agent connected`，并且有人进入房间后看到 `track subscribed`。
+- Token server 的 `http://127.0.0.1:8787/health` 返回 JSON。
+- 前端首页服务状态为可用，进入房间后点“开始”能听到 AI 开场。
+- 调试台能看到 `transcript.partial`、`transcript.final`、`assistant.text.done` 和 TTS 耗时日志。
+
+## 边界
+
+- 现在还没有接入主项目的岗位/JD/简历/RAG/评分闭环。
+- TTS 目前是前端本地播放，不是作为 LiveKit audio track 发布到房间。
+- 回答结束判断仍是启发式逻辑，适合继续打磨，但还不是最终工业级方案。
+- 本地 `devkey/secret` 只能用于开发，不适合公网部署。
+
+后续优化见 [技术债文档](docs/technical-debt.md)。

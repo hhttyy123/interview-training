@@ -7,6 +7,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 from livekit import api, rtc
 
+from interview import InterviewEvaluator, InterviewOrchestrator
 from local_providers import (
     ConversationMessage,
     DeepSeekStreamingTextProvider,
@@ -28,18 +29,6 @@ LIVEKIT_API_SECRET = os.getenv("LIVEKIT_API_SECRET", "secret")
 ROOM_NAME = os.getenv("LIVEKIT_ROOM", "interview-spike-room")
 AGENT_IDENTITY = "interview-agent"
 
-SYSTEM_PROMPT = """
-你是一个面向应届生的公司岗位级 AI 面试训练教练。
-当前测试场景是产品经理岗位真实语音模拟面试。
-全程使用中文。每次只问一个问题。
-追问必须基于候选人刚才的回答。
-如果回答缺少背景、行动、结果或量化证据，就继续追问。
-如果候选人卡顿或表示正在思考，给他时间，不要催促。
-回复要简短自然，适合语音播报，不要输出复杂格式。
-""".strip()
-
-OPENING_QUESTION = "你好，我们开始一轮产品经理模拟面试。请先用一分钟介绍一个最能代表你产品能力的项目。"
-
 
 class AdaptiveVoiceGate:
     min_voice_threshold = 0.012
@@ -51,7 +40,11 @@ class AdaptiveVoiceGate:
         self.noise_floor = 0.006
 
     def classify(self, rms: float) -> tuple[bool, float]:
-        threshold = max(self.min_voice_threshold, self.noise_floor * self.speech_threshold_ratio, self.noise_floor + self.voice_margin)
+        threshold = max(
+            self.min_voice_threshold,
+            self.noise_floor * self.speech_threshold_ratio,
+            self.noise_floor + self.voice_margin,
+        )
         has_voice = rms >= threshold
         if not has_voice:
             self.noise_floor = self.noise_floor * self.noise_smoothing + rms * (1 - self.noise_smoothing)
@@ -62,6 +55,7 @@ class ConversationControl:
     def __init__(self) -> None:
         self.started = False
         self.ended = False
+        self.finishing = False
         self.force_finalize = asyncio.Event()
         self.assistant_speaking = False
 
@@ -90,6 +84,18 @@ async def publish_json(room: rtc.Room, payload: dict[str, object]) -> None:
     await room.local_participant.publish_data(message.encode("utf-8"), reliable=True, topic="interview")
 
 
+def training_config_from_event(event: dict[str, object]) -> dict[str, str]:
+    config = event.get("config")
+    if not isinstance(config, dict):
+        config = {}
+    return {
+        "job_id": str(config.get("jobId", "product_manager")),
+        "mode_id": str(config.get("modeId", "standard")),
+        "competency_id": str(config.get("competencyId", "requirement_analysis")),
+        "strategy_id": str(config.get("strategyId", "evidence_probe")),
+    }
+
+
 async def main() -> None:
     logger.info("preloading FunASR model")
     await preload_shared_funasr_model()
@@ -98,6 +104,8 @@ async def main() -> None:
     room = rtc.Room()
     messages: list[ConversationMessage] = []
     llm_provider = DeepSeekStreamingTextProvider()
+    orchestrator = InterviewOrchestrator()
+    evaluator = InterviewEvaluator()
     audio_tasks: dict[str, asyncio.Task[None]] = {}
     control = ConversationControl()
 
@@ -119,7 +127,9 @@ async def main() -> None:
         if publication.sid in audio_tasks and not audio_tasks[publication.sid].done():
             return
 
-        task = asyncio.create_task(process_candidate_audio(room, track, publication, messages, llm_provider, control))
+        task = asyncio.create_task(
+            process_candidate_audio(room, track, publication, messages, llm_provider, orchestrator, evaluator, control)
+        )
         audio_tasks[publication.sid] = task
         task.add_done_callback(lambda _task: audio_tasks.pop(publication.sid, None))
 
@@ -161,9 +171,12 @@ async def main() -> None:
         if event_type == "start_session":
             if control.started and not control.ended:
                 return
+            messages.clear()
+            orchestrator.configure(**training_config_from_event(event))
             control.started = True
             control.ended = False
-            asyncio.create_task(publish_json(room, {"type": "assistant.text.done", "text": OPENING_QUESTION}))
+            control.finishing = False
+            asyncio.create_task(publish_json(room, {"type": "assistant.text.done", "text": orchestrator.opening_question}))
         elif event_type == "end_turn":
             control.force_finalize.set()
         elif event_type == "assistant_speaking":
@@ -171,10 +184,13 @@ async def main() -> None:
         elif event_type == "assistant_done":
             control.assistant_speaking = False
         elif event_type == "end_session":
+            if control.finishing:
+                return
             control.ended = True
             control.started = False
+            control.finishing = True
             control.force_finalize.set()
-            asyncio.create_task(publish_json(room, {"type": "session.ended", "text": "本轮面试已结束。"}))
+            asyncio.create_task(finish_interview(room, orchestrator, evaluator, llm_provider, control))
 
     logger.info("connecting agent to room=%s url=%s", ROOM_NAME, LIVEKIT_URL)
     await room.connect(LIVEKIT_URL, create_agent_token())
@@ -198,6 +214,8 @@ async def process_candidate_audio(
     publication: rtc.RemoteTrackPublication,
     messages: list[ConversationMessage],
     llm_provider: DeepSeekStreamingTextProvider,
+    orchestrator: InterviewOrchestrator,
+    evaluator: InterviewEvaluator,
     control: ConversationControl,
 ) -> None:
     logger.info("started candidate audio processor sid=%s", publication.sid)
@@ -210,7 +228,6 @@ async def process_candidate_audio(
     finalizing = False
     last_voice_notice_at = 0.0
     last_voice_seen_at = 0.0
-    voice_threshold = 0.012
 
     async for audio_event in audio_stream:
         if control.ended or not control.started or control.assistant_speaking:
@@ -277,14 +294,7 @@ async def process_candidate_audio(
             turn_action = action.action
             turn_reason = action.reason
             if action.action is TurnAction.WAITING:
-                await publish_json(
-                    room,
-                    {
-                        "type": "turn.waiting",
-                        "waitMs": action.wait_ms,
-                        "reason": action.reason,
-                    },
-                )
+                await publish_json(room, {"type": "turn.waiting", "waitMs": action.wait_ms, "reason": action.reason})
             elif action.action is TurnAction.HINT:
                 await publish_json(
                     room,
@@ -309,27 +319,71 @@ async def process_candidate_audio(
             logger.info("final transcript=%s", final_update.text)
             await publish_json(room, {"type": "transcript.final", "text": final_update.text, "reason": turn_reason})
             messages.append(ConversationMessage("user", final_update.text))
-            await stream_assistant_reply(room, messages, llm_provider)
+            orchestrator.record_candidate_answer(final_update.text)
+            if orchestrator.should_finish:
+                control.started = False
+                control.ended = True
+                if not control.finishing:
+                    control.finishing = True
+                    await finish_interview(room, orchestrator, evaluator, llm_provider, control)
+            else:
+                await stream_assistant_reply(room, messages, llm_provider, orchestrator)
 
 
 async def stream_assistant_reply(
     room: rtc.Room,
     messages: list[ConversationMessage],
     llm_provider: DeepSeekStreamingTextProvider,
+    orchestrator: InterviewOrchestrator,
 ) -> None:
     assistant_text = ""
     await publish_json(room, {"type": "assistant.state", "state": "thinking"})
     try:
-        async for chunk in llm_provider.stream_reply(messages, system_prompt=SYSTEM_PROMPT):
+        system_prompt = orchestrator.build_followup_prompt()
+        async for chunk in llm_provider.stream_reply(messages, system_prompt=system_prompt):
             assistant_text += chunk
             await publish_json(room, {"type": "assistant.text.delta", "text": chunk})
     except Exception as error:
         logger.exception("DeepSeek reply failed")
         assistant_text = f"我调用 DeepSeek 时出错了：{error}"
 
-    assistant_text = assistant_text.strip() or "我刚才没有生成有效追问。你可以再补充一个具体例子吗？"
+    assistant_text = assistant_text.strip() or "你可以再补充一个更具体的项目细节吗？"
     messages.append(ConversationMessage("assistant", assistant_text))
+    orchestrator.record_assistant_question(assistant_text)
     await publish_json(room, {"type": "assistant.text.done", "text": assistant_text})
+
+
+async def finish_interview(
+    room: rtc.Room,
+    orchestrator: InterviewOrchestrator,
+    evaluator: InterviewEvaluator,
+    llm_provider: DeepSeekStreamingTextProvider,
+    control: ConversationControl | None = None,
+) -> None:
+    try:
+        await publish_json(room, {"type": "interview.evaluating"})
+        try:
+            report = await evaluator.evaluate(orchestrator=orchestrator, llm_provider=llm_provider)
+        except Exception as error:
+            logger.exception("interview evaluation failed")
+            report = {
+                "summary": f"评分生成失败：{error}",
+                "dimensions": [],
+                "main_weakness": "请查看后端日志。",
+                "training_plan": {
+                    "theme": "评分链路排查",
+                    "goal": "确认 DeepSeek 与 JSON 评分输出是否正常。",
+                    "exercise": "重新完成一轮短面试后查看调试台。",
+                    "method": "先用 1-2 轮短回答测试。",
+                    "duration_minutes": 5,
+                },
+            }
+        await publish_json(room, {"type": "interview.report", "report": report})
+        await publish_json(room, {"type": "assistant.text.done", "text": orchestrator.closing_text()})
+        await publish_json(room, {"type": "session.ended", "text": "本轮面试已结束，评分和训练建议已生成。"})
+    finally:
+        if control:
+            control.finishing = False
 
 
 if __name__ == "__main__":

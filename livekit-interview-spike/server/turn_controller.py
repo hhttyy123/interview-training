@@ -5,9 +5,9 @@ from enum import Enum
 from local_providers import ConversationMessage
 from turn_completion import (
     CompletionStatus,
-    TurnCompletionDecision,
     TurnCompletionJudge,
     TurnCompletionRequest,
+    TurnCompletionDecision,
 )
 
 

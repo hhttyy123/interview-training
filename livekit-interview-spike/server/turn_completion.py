@@ -71,7 +71,7 @@ def rule_based_completion(request: TurnCompletionRequest) -> TurnCompletionDecis
     if len(text) < 16:
         return TurnCompletionDecision(CompletionStatus.UNCERTAIN, 0.52, 3600, "short ambiguous answer")
 
-    if text[-1:] in ".!?;:。！？；" and len(text) >= 20:
+    if text[-1:] in ".!?;:。！？，；" and len(text) >= 20:
         return TurnCompletionDecision(CompletionStatus.COMPLETE, 0.82, 0, "sentence-ending punctuation")
 
     if len(text) >= 80 and request.pause_ms >= 1100:
