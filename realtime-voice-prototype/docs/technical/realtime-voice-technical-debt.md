@@ -39,6 +39,24 @@ Risk: if controls are re-rendered, multiple `keydown` listeners could stack up a
 
 Fix: the controls renderer now removes the previous static keydown handler before registering a new one.
 
+### Assistant interruption was too sensitive in noisy rooms
+
+Risk: after the user manually ended a turn, background speech could be treated as a fresh user interruption while the assistant was starting its reply. That cancelled the assistant stream and made the session feel stuck in listening mode.
+
+Fix: added a short manual-end lock window and a stricter assistant barge-in gate. During assistant replies, interruption now requires sustained strong voice above the current noise floor. Candidate interruption audio is buffered and forwarded only after the interruption is confirmed.
+
+### Turn completion felt inconsistent and hard to debug
+
+Risk: when the system waited too long or ended quickly, there was no compact record showing whether the delay came from VAD, transcript stability, the LLM judge, or the wait policy.
+
+Fix: turn decisions now include structured backend traces. The wait policy also shortens ambiguous waits for longer answers instead of blindly applying the default uncertain window.
+
+### Background speech could still extend the user's turn
+
+Risk: a nearby voice could pass the basic VAD gate, refresh the user's last-voice timestamp, and delay turn completion even when the candidate had stopped.
+
+Fix: regular answer capture now uses a stricter near-voice check before refreshing the turn timer or sending audio to ASR. The basic VAD signal is still retained for noise-floor tracking.
+
 ## Remaining Debt
 
 ### Voice activity detection is still lightweight

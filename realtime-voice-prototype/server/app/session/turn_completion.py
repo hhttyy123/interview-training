@@ -64,12 +64,15 @@ def rule_based_completion(request: TurnCompletionRequest) -> TurnCompletionDecis
         return TurnCompletionDecision(CompletionStatus.INCOMPLETE, 0.82, 18000, "open-ended phrase")
 
     if len(text) < 12:
-        return TurnCompletionDecision(CompletionStatus.INCOMPLETE, 0.74, 15000, "short answer")
+        return TurnCompletionDecision(CompletionStatus.INCOMPLETE, 0.68, 4500, "short answer")
 
     if text[-1:] in ".!?;:\u3002\uff01\uff1f\uff1b" and len(text) >= 24:
-        return TurnCompletionDecision(CompletionStatus.COMPLETE, 0.72, 0, "sentence-ending punctuation")
+        return TurnCompletionDecision(CompletionStatus.COMPLETE, 0.82, 0, "sentence-ending punctuation")
 
     if len(text) >= 80 and request.pause_ms >= 1200:
-        return TurnCompletionDecision(CompletionStatus.COMPLETE, 0.68, 2000, "long answer with pause")
+        return TurnCompletionDecision(CompletionStatus.COMPLETE, 0.78, 0, "long answer with pause")
 
-    return TurnCompletionDecision(CompletionStatus.UNCERTAIN, 0.5, 12000, "ambiguous pause")
+    if len(text) >= 36 and request.pause_ms >= 1200:
+        return TurnCompletionDecision(CompletionStatus.COMPLETE, 0.76, 0, "answer-length pause")
+
+    return TurnCompletionDecision(CompletionStatus.UNCERTAIN, 0.5, 5500, "ambiguous pause")

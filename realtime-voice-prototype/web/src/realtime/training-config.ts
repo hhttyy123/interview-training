@@ -13,21 +13,21 @@ export const DEFAULT_TRAINING_CONFIG: TrainingConfig = {
 };
 
 export const TRAINING_OPTIONS = {
-  jobs: [{ id: "product_manager", label: "产品经理" }],
+  jobs: [{ id: "product_manager", label: "\u4ea7\u54c1\u7ecf\u7406" }],
   modes: [
-    { id: "standard", label: "标准训练" },
-    { id: "guided", label: "引导训练" },
-    { id: "challenge", label: "压力追问" },
+    { id: "standard", label: "\u6807\u51c6\u8bad\u7ec3" },
+    { id: "guided", label: "\u5f15\u5bfc\u8bad\u7ec3" },
+    { id: "challenge", label: "\u538b\u529b\u8ffd\u95ee" },
   ],
   competencies: [
-    { id: "requirement_analysis", label: "需求分析" },
-    { id: "project_delivery", label: "项目推进" },
-    { id: "impact_expression", label: "结果表达" },
+    { id: "requirement_analysis", label: "\u9700\u6c42\u5206\u6790" },
+    { id: "project_delivery", label: "\u9879\u76ee\u63a8\u8fdb" },
+    { id: "impact_expression", label: "\u7ed3\u679c\u8868\u8fbe" },
   ],
   strategies: [
-    { id: "clarification_probe", label: "澄清追问" },
-    { id: "evidence_probe", label: "证据追问" },
-    { id: "result_probe", label: "结果追问" },
-    { id: "reflection_probe", label: "复盘追问" },
+    { id: "clarification_probe", label: "\u6f84\u6e05\u8ffd\u95ee" },
+    { id: "evidence_probe", label: "\u8bc1\u636e\u8ffd\u95ee" },
+    { id: "result_probe", label: "\u7ed3\u679c\u8ffd\u95ee" },
+    { id: "reflection_probe", label: "\u590d\u76d8\u8ffd\u95ee" },
   ],
 } as const;

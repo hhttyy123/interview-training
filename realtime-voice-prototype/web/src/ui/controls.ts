@@ -20,24 +20,23 @@ export class Controls {
 
   render(): void {
     this.host.innerHTML = `
-      <section class="training-config" aria-label="training configuration">
+      <section class="training-config" aria-label="\u8bad\u7ec3\u914d\u7f6e">
         <div class="config-heading">
-          <p class="label">TRAINING SETUP</p>
-          <strong>Realtime interview room</strong>
+          <p class="label">\u8bad\u7ec3\u8bbe\u7f6e</p>
+          <strong>\u5b9e\u65f6\u9762\u8bd5\u8bad\u7ec3\u5ba4</strong>
         </div>
-        ${this.selectField("jobId", "Job", TRAINING_OPTIONS.jobs)}
-        ${this.selectField("modeId", "Mode", TRAINING_OPTIONS.modes)}
-        ${this.selectField("competencyId", "Competency", TRAINING_OPTIONS.competencies)}
-        ${this.selectField("strategyId", "Follow-up", TRAINING_OPTIONS.strategies)}
+        ${this.selectField("jobId", "\u5c97\u4f4d", TRAINING_OPTIONS.jobs)}
+        ${this.selectField("modeId", "\u6a21\u5f0f", TRAINING_OPTIONS.modes)}
+        ${this.selectField("competencyId", "\u80fd\u529b\u70b9", TRAINING_OPTIONS.competencies)}
+        ${this.selectField("strategyId", "\u8ffd\u95ee\u65b9\u5f0f", TRAINING_OPTIONS.strategies)}
       </section>
       <div class="controls">
-        <button class="start" type="button">Start session</button>
-        <button class="stop" type="button">End session</button>
+        <button class="start" type="button">\u5f00\u59cb\u4f1a\u8bdd</button>
+        <button class="stop" type="button">\u7ed3\u675f\u4f1a\u8bdd</button>
       </div>
       <div class="controls speech-controls">
-        <button class="finish" type="button" title="Press Enter to force the current turn to end.">I'm done</button>
+        <button class="finish" type="button" title="\u6309 Enter \u53ef\u624b\u52a8\u7ed3\u675f\u5f53\u524d\u8fd9\u4e00\u8f6e\u3002">\u6211\u8bf4\u5b8c\u4e86</button>
       </div>
-      <p class="privacy">The microphone stays on only during the active session. Audio and transcripts are not persisted.</p>
     `;
     const start = this.host.querySelector<HTMLButtonElement>(".start");
     const stop = this.host.querySelector<HTMLButtonElement>(".stop");

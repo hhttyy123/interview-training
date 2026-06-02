@@ -37,11 +37,14 @@ Implemented:
 - The manual per-turn button is now a fallback `I'm done` action, with `Enter` as a shortcut.
 - Backend turn control combines lightweight voice activity detection, ASR transcript stability, rule-based completion checks, and a DeepSeek-backed completion judge for ambiguous pauses.
 - Uncertain or incomplete turns enter a dynamic wait state and show a final-window UI hint before the backend automatically ends the turn.
-- If the user starts speaking while an assistant text reply is streaming, the backend cancels the current assistant generation and returns to listening.
+- Turn decisions now produce structured backend traces with pause duration, transcript stability, judge result, judge latency, wait duration, and final reason.
+- Ordinary answer capture now uses a stricter near-voice gate so weak background speech is less likely to refresh the user's pause timer or pollute ASR input.
+- If the user clearly interrupts while an assistant text reply is streaming, the backend cancels the current assistant generation and returns to listening.
+- Manual turn end now has a short lock window, and assistant interruption requires sustained strong voice above the current noise floor.
 
 Needs verification:
 
-- Real noisy-room behavior of the lightweight voice activity detector.
+- Real noisy-room behavior of the lightweight voice activity detector, near-voice gate, and stricter assistant interruption gate.
 - Whether the DeepSeek completion judge returns valid JSON consistently in the configured account/model.
 - Whether the default wait windows feel natural during interview-style answers.
 
@@ -98,8 +101,10 @@ npm run dev
 7. Confirm partial transcripts appear while speaking.
 8. Confirm the backend either waits for more speech or automatically finalizes the turn.
 9. Confirm an AI text reply streams after the final transcript.
-10. While the AI text reply is streaming, start speaking again and confirm the reply is cancelled.
-11. Use `I'm done` or `Enter` once as a fallback and confirm it immediately finalizes the current turn.
+10. While the AI text reply is streaming, start speaking clearly and confirm the reply is cancelled.
+11. Play or create mild background speech during the AI reply and confirm it does not cancel the reply.
+12. Speak a complete answer and confirm the backend does not sit in a long fixed wait when the transcript is already stable.
+13. Use `I'm done` or `Enter` once as a fallback and confirm it immediately finalizes the current turn without being reopened by nearby background speech.
 
 ## Next step
 

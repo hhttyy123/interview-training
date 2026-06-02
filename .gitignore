@@ -1,4 +1,60 @@
+# Environment and secrets
 .env
 *.env
 !.env.example
-realtime-voice-prototype/server/.env
+**/.env
+**/*.env
+!**/.env.example
+
+# Python
+.venv/
+**/.venv/
+venv/
+**/venv/
+__pycache__/
+**/__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+**/.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Node / frontend
+node_modules/
+**/node_modules/
+dist/
+**/dist/
+build/
+**/build/
+.vite/
+**/.vite/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Local model/cache outputs
+models/*
+!models/.gitignore
+**/.cache/
+**/modelscope/
+**/outputs/
+**/runs/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+.idea/
+.vscode/
+
+# Logs and temporary files
+*.log
+*.tmp
+*.temp
+tmp/
+temp/
