@@ -101,5 +101,8 @@ async def create_token(request: TokenRequest) -> dict[str, str]:
 
 @app.post("/tts")
 async def create_tts(request: TtsRequest) -> Response:
+    started_at = time.perf_counter()
     audio = await synthesize_edge_tts(request.text.strip(), voice=request.voice, rate=request.rate)
+    elapsed_ms = int((time.perf_counter() - started_at) * 1000)
+    logger.info("created tts bytes=%s elapsed_ms=%s", len(audio), elapsed_ms)
     return Response(content=audio, media_type="audio/mpeg", headers={"Cache-Control": "no-store"})

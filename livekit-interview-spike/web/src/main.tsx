@@ -171,6 +171,8 @@ function InterviewRoom({
   const [conversation, setConversation] = useState<ConversationEntry[]>([]);
   const [livekitConnected, setLivekitConnected] = useState(false);
   const [phase, setPhaseState] = useState<SessionPhase>("idle");
+  const [showDebug, setShowDebug] = useState(false);
+  const [lastVoiceLevel, setLastVoiceLevel] = useState(0);
 
   function setPhase(next: SessionPhase) {
     phaseRef.current = next;
@@ -244,6 +246,8 @@ function InterviewRoom({
     if (objectUrlRef.current) URL.revokeObjectURL(objectUrlRef.current);
 
     try {
+      const ttsStartedAt = performance.now();
+      setAssistantState("正在准备 AI 语音");
       const response = await fetch(`${API_BASE}/tts`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -254,6 +258,8 @@ function InterviewRoom({
       }
 
       objectUrlRef.current = URL.createObjectURL(await response.blob());
+      const ttsReadyMs = Math.round(performance.now() - ttsStartedAt);
+      addDebugEvent(`TTS 音频已返回：${ttsReadyMs}ms`);
       audioRef.current = new Audio(objectUrlRef.current);
       setPhase("speaking");
       setAssistantState("AI 正在说话，麦克风已暂时关闭");
@@ -294,6 +300,7 @@ function InterviewRoom({
         text?: string;
         state?: string;
         reason?: string;
+        rms?: number;
       };
       try {
         event = JSON.parse(raw) as typeof event;
@@ -363,6 +370,8 @@ function InterviewRoom({
         setAssistantState("AI 面试官已进入房间");
       }
       if (event.type === "audio.state" && event.state === "voice" && phaseRef.current === "listening") {
+        const rms = typeof event.rms === "number" ? event.rms : 0;
+        setLastVoiceLevel(Math.max(0, Math.min(1, rms * 18)));
         setAssistantState("检测到你的声音");
       }
       if (event.type === "audio.state" && event.state === "muted" && phaseRef.current !== "speaking") {
@@ -413,16 +422,63 @@ function InterviewRoom({
   }, [livekitRoom]);
 
   return (
-    <main className="room-shell">
-      <header className="room-header">
+    <main className={showDebug ? "room-shell debug-layout" : "room-shell call-layout"}>
+      <header className="room-header call-header">
         <div>
-          <p className="eyebrow">AI INTERVIEW ROOM</p>
+          <p className="eyebrow">AI INTERVIEW CALL</p>
           <h1>产品经理模拟面试</h1>
         </div>
-        <span className="pill">{room}</span>
+        <div className="header-actions">
+          <span className="pill">{livekitConnected ? "房间已连接" : "正在连接"}</span>
+          <button type="button" className="ghost-button" onClick={() => setShowDebug((current) => !current)}>
+            {showDebug ? "返回通话" : "调试台"}
+          </button>
+        </div>
       </header>
 
-      <section className="voice-stage" data-state={stateText}>
+      {!showDebug && (
+        <section className="call-stage" data-phase={phase}>
+          <div className="call-backdrop" />
+          <div className="call-persona">
+            <div className="call-avatar" data-phase={phase}>
+              <div className="avatar-core">
+                <span>AI</span>
+              </div>
+              <div className="avatar-ring ring-one" />
+              <div className="avatar-ring ring-two" />
+            </div>
+            <p className="call-status-minimal">{minimalStatus(phase, assistantState || statusText(stateText))}</p>
+          </div>
+
+          <div className="user-wave" data-active={phase === "listening"} style={{ "--voice-level": lastVoiceLevel } as React.CSSProperties}>
+            {Array.from({ length: 18 }, (_, index) => (
+              <span key={index} />
+            ))}
+          </div>
+
+          <div className="call-controls">
+            <button
+              type="button"
+              className="call-control primary-call"
+              onClick={startSession}
+              disabled={!livekitConnected || phase === "listening" || phase === "thinking" || phase === "speaking"}
+            >
+              <span>开始</span>
+            </button>
+            <button type="button" className="call-control" onClick={finishTurn} disabled={phase !== "listening"}>
+              <span>说完了</span>
+            </button>
+            <button type="button" className="call-control end-call" onClick={endSession} disabled={phase === "ended"}>
+              <span>结束</span>
+            </button>
+          </div>
+
+          <p className="call-note">完整转写与事件在调试台查看</p>
+        </section>
+      )}
+
+      {showDebug && (
+        <section className="voice-stage" data-state={stateText}>
         <HealthPanel health={health} healthError={healthError} />
         <div className="connection-row">
           <span className="health-dot" data-ok={livekitConnected} />
@@ -504,13 +560,30 @@ function InterviewRoom({
             </ul>
           )}
         </details>
-      </section>
+        </section>
+      )}
 
-      <footer className="controls">
+      <footer className={showDebug ? "controls" : "controls compact-controls"}>
         <ControlBar variation="minimal" controls={{ camera: false, screenShare: false }} />
       </footer>
     </main>
   );
+}
+
+function callTitle(phase: SessionPhase): string {
+  if (phase === "speaking") return "面试官正在提问";
+  if (phase === "thinking") return "正在整理追问";
+  if (phase === "listening") return "轮到你回答";
+  if (phase === "ended") return "本轮面试已结束";
+  return "准备开始面试";
+}
+
+function minimalStatus(phase: SessionPhase, fallback: string): string {
+  if (phase === "speaking") return "AI 正在说话";
+  if (phase === "thinking") return "思考中";
+  if (phase === "listening") return "请回答";
+  if (phase === "ended") return "已结束";
+  return fallback;
 }
 
 function statusText(state: string): string {

@@ -43,6 +43,12 @@ button:disabled {
   background: #9f3f31;
 }
 
+.ghost-button {
+  color: #214f40;
+  background: rgba(251, 252, 247, 0.72);
+  box-shadow: inset 0 0 0 1px rgba(33, 79, 64, 0.12);
+}
+
 .landing,
 .room-shell {
   min-height: 100vh;
@@ -157,11 +163,25 @@ h1 {
   gap: 1rem;
 }
 
+.call-layout {
+  max-width: 920px;
+}
+
 .room-header {
   display: flex;
   justify-content: space-between;
   gap: 1rem;
   align-items: center;
+}
+
+.call-header h1 {
+  font-size: clamp(1.6rem, 3vw, 2.8rem);
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
 }
 
 .pill {
@@ -189,6 +209,218 @@ h1 {
     radial-gradient(circle at 50% 40%, rgba(47, 111, 88, 0.15), transparent 32%),
     rgba(251, 252, 247, 0.78);
   box-shadow: 0 28px 70px rgba(32, 47, 39, 0.1);
+}
+
+.call-stage {
+  position: relative;
+  min-height: min(72vh, 48rem);
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: clamp(1.2rem, 4vh, 2.4rem);
+  overflow: hidden;
+  border: 1px solid rgba(33, 79, 64, 0.12);
+  border-radius: 2rem;
+  background:
+    radial-gradient(circle at 50% 22%, rgba(226, 239, 225, 0.95), transparent 26%),
+    radial-gradient(circle at 20% 80%, rgba(196, 110, 68, 0.12), transparent 28%),
+    linear-gradient(160deg, rgba(251, 252, 247, 0.9), rgba(218, 231, 220, 0.88));
+  box-shadow: 0 32px 90px rgba(32, 47, 39, 0.13);
+}
+
+.call-backdrop {
+  position: absolute;
+  inset: 12%;
+  border-radius: 999px;
+  background:
+    repeating-radial-gradient(circle, rgba(33, 79, 64, 0.08) 0 1px, transparent 1px 22px),
+    radial-gradient(circle, rgba(33, 79, 64, 0.12), transparent 58%);
+  filter: blur(0.5px);
+  opacity: 0.75;
+  pointer-events: none;
+}
+
+.call-persona {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  gap: 0.85rem;
+  text-align: center;
+}
+
+.call-avatar {
+  position: relative;
+  width: clamp(12rem, 28vw, 17rem);
+  height: clamp(12rem, 28vw, 17rem);
+  display: grid;
+  place-items: center;
+}
+
+.avatar-core {
+  position: relative;
+  z-index: 2;
+  width: 58%;
+  height: 58%;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  color: #fbfcf7;
+  background:
+    radial-gradient(circle at 38% 28%, rgba(255, 255, 255, 0.35), transparent 18%),
+    linear-gradient(145deg, #214f40, #2d715b);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.18),
+    0 26px 62px rgba(33, 79, 64, 0.24);
+}
+
+.avatar-core span {
+  font-family: "Iowan Old Style", "STSong", "Songti SC", serif;
+  font-size: clamp(2.4rem, 6vw, 4.4rem);
+  font-weight: 850;
+}
+
+.avatar-ring {
+  position: absolute;
+  inset: 12%;
+  border-radius: 999px;
+  border: 1px solid rgba(33, 79, 64, 0.16);
+  background: rgba(251, 252, 247, 0.26);
+}
+
+.ring-two {
+  inset: 0;
+  opacity: 0.5;
+}
+
+.call-avatar[data-phase="speaking"] .ring-one,
+.call-avatar[data-phase="listening"] .ring-one {
+  animation: callPulse 1.8s ease-out infinite;
+}
+
+.call-avatar[data-phase="speaking"] .ring-two,
+.call-avatar[data-phase="listening"] .ring-two {
+  animation: callPulse 1.8s ease-out infinite 0.55s;
+}
+
+.call-status-minimal {
+  margin: 0;
+  min-height: 1.6rem;
+  color: #6a7a73;
+  font-size: 0.95rem;
+  font-weight: 750;
+  letter-spacing: 0.08em;
+}
+
+.user-wave {
+  position: relative;
+  z-index: 1;
+  --voice-level: 0;
+  width: min(72vw, 24rem);
+  height: 4.6rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  padding: 0.9rem 1rem;
+  border-radius: 999px;
+  background: rgba(251, 252, 247, 0.44);
+  box-shadow: inset 0 0 0 1px rgba(33, 79, 64, 0.08);
+  backdrop-filter: blur(14px);
+}
+
+.user-wave span {
+  width: 0.32rem;
+  height: calc(0.55rem + var(--voice-level) * 2.2rem);
+  min-height: 0.55rem;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #2d715b, #9fb9aa);
+  opacity: 0.35;
+  transform: scaleY(0.75);
+  transition: height 120ms ease, opacity 160ms ease, transform 160ms ease;
+}
+
+.user-wave[data-active="true"] span {
+  opacity: 0.82;
+  animation: waveIdle 1.1s ease-in-out infinite;
+}
+
+.user-wave[data-active="true"] span:nth-child(2n) {
+  animation-delay: 0.12s;
+}
+
+.user-wave[data-active="true"] span:nth-child(3n) {
+  animation-delay: 0.24s;
+}
+
+.user-wave[data-active="true"] span:nth-child(5n) {
+  animation-delay: 0.36s;
+}
+
+.call-controls {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.9rem;
+}
+
+.call-control {
+  min-width: 6.2rem;
+  min-height: 3.5rem;
+  padding: 0.9rem 1.25rem;
+  color: #214f40;
+  background: rgba(251, 252, 247, 0.78);
+  box-shadow:
+    inset 0 0 0 1px rgba(33, 79, 64, 0.1),
+    0 12px 34px rgba(32, 47, 39, 0.08);
+}
+
+.primary-call {
+  color: #fbfcf7;
+  background: #214f40;
+}
+
+.end-call {
+  color: #fff9f4;
+  background: #b64a3a;
+}
+
+.call-note {
+  position: relative;
+  z-index: 1;
+  max-width: 34rem;
+  margin: 0;
+  color: #87948e;
+  font-size: 0.78rem;
+  line-height: 1.6;
+  text-align: center;
+}
+
+.compact-controls {
+  display: none;
+}
+
+@keyframes callPulse {
+  0% {
+    transform: scale(0.92);
+    opacity: 0.58;
+  }
+  100% {
+    transform: scale(1.12);
+    opacity: 0;
+  }
+}
+
+@keyframes waveIdle {
+  0%,
+  100% {
+    transform: scaleY(0.72);
+  }
+  50% {
+    transform: scaleY(1.18);
+  }
 }
 
 .orb {
@@ -362,8 +594,17 @@ h1 {
     display: grid;
   }
 
+  .header-actions {
+    justify-content: space-between;
+  }
+
   .voice-stage {
     min-height: 25rem;
+  }
+
+  .call-stage {
+    min-height: 70vh;
+    border-radius: 1.35rem;
   }
 
   .health-panel,
