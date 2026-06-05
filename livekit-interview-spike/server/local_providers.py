@@ -153,6 +153,47 @@ class DeepSeekStreamingTextProvider:
                     if chunk:
                         yield chunk
 
+    async def complete_reply(
+        self,
+        messages: list[ConversationMessage],
+        *,
+        system_prompt: str,
+        temperature: float = 0.0,
+    ) -> str:
+        if not self.api_key:
+            raise RuntimeError("未配置 DEEPSEEK_API_KEY，无法进行真实模型分析。")
+
+        payload = {
+            "model": self.model,
+            "messages": [{"role": "system", "content": system_prompt}]
+            + [{"role": item.role, "content": item.text} for item in messages[-10:]],
+            "stream": False,
+            "temperature": temperature,
+            "thinking": {"type": "disabled"},
+        }
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+        }
+        timeout = httpx.Timeout(connect=10.0, read=60.0, write=10.0, pool=10.0)
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            response = await client.post(
+                f"{self.base_url}/chat/completions",
+                headers=headers,
+                json=payload,
+            )
+        if response.status_code >= 400:
+            raise RuntimeError(f"DeepSeek request failed with {response.status_code}: {response.text}")
+
+        payload = response.json()
+        choices = payload.get("choices", [])
+        if not choices:
+            raise RuntimeError("DeepSeek response does not contain choices.")
+        content = choices[0].get("message", {}).get("content")
+        if not isinstance(content, str) or not content.strip():
+            raise RuntimeError("DeepSeek response content is empty.")
+        return content
+
     def _parse_sse_line(self, line: str) -> str:
         line = line.strip()
         if not line.startswith("data:"):
@@ -168,11 +209,21 @@ class DeepSeekStreamingTextProvider:
         return content if isinstance(content, str) else ""
 
 
-async def synthesize_edge_tts(text: str, *, voice: str = "zh-CN-XiaoxiaoNeural", rate: str = "+18%") -> bytes:
+async def synthesize_edge_tts(
+    text: str,
+    *,
+    voice: str = "zh-CN-XiaoxiaoNeural",
+    rate: str = "+18%",
+    pitch: str = "+0Hz",
+    volume: str = "+0%",
+) -> bytes:
     import edge_tts
 
     async def collect_audio() -> bytes:
-        communicate = edge_tts.Communicate(text, voice, rate=rate)
+        try:
+            communicate = edge_tts.Communicate(text, voice, rate=rate, pitch=pitch, volume=volume)
+        except TypeError:
+            communicate = edge_tts.Communicate(text, voice, rate=rate)
         audio = bytearray()
         async for chunk in communicate.stream():
             if chunk["type"] == "audio":

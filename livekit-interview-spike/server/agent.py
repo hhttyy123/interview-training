@@ -8,7 +8,9 @@ from dotenv import load_dotenv
 from livekit import api, rtc
 
 from interview import InterviewEvaluator, InterviewOrchestrator
-from interview.configs import TRAINING_OPTIONS
+from interview.company_intel import company_card_from_payload
+from interview.configs import TRAINING_OPTIONS, role_by_id
+from interview.models import DynamicCompetency, DynamicEvidenceRequirement, DynamicJobModel, DynamicRubricDimension
 from local_providers import (
     ConversationMessage,
     DeepSeekStreamingTextProvider,
@@ -85,15 +87,42 @@ async def publish_json(room: rtc.Room, payload: dict[str, object]) -> None:
     await room.local_participant.publish_data(message.encode("utf-8"), reliable=True, topic="interview")
 
 
-def training_config_from_event(event: dict[str, object]) -> dict[str, str]:
+def training_config_from_event(event: dict[str, object]) -> dict[str, object]:
     config = event.get("config")
     if not isinstance(config, dict):
         config = {}
+    job_id = str(config.get("jobId", "product_manager"))
+    role = role_by_id(job_id)
+    job_label = str(config.get("customJobTitle") or role.label)
+
+    # 尝试反序列化动态模型
+    dynamic_model = _deserialize_dynamic_model(config.get("dynamicModel"))
+
+    # 如果有动态模型，用模型中的 competency_id 覆盖
+    if dynamic_model:
+        default_competency = dynamic_model.focus_competency_id or (
+            dynamic_model.competencies[0].id if dynamic_model.competencies else "comp_0"
+        )
+    else:
+        default_competency = role.competencies[0].id
+
     return {
-        "job_id": str(config.get("jobId", "product_manager")),
+        "job_id": job_id,
+        "job_label": job_label,
         "mode_id": str(config.get("modeId", "standard")),
-        "competency_id": str(config.get("competencyId", "requirement_analysis")),
+        "competency_id": str(config.get("competencyId", default_competency)),
         "strategy_id": str(config.get("strategyId", "evidence_probe")),
+        "company_card": company_card_from_payload(config.get("companyCard"), fallback_role=role.label),
+        "jd_text": str(config.get("jdText", "")),
+        "resume_text": str(config.get("resumeText", "")),
+        "voice_profile_id": str(config.get("voiceProfileId", "gentle_female_young")),
+        "voice_rate": str(config.get("voiceRate", "")),
+        "voice_pitch": str(config.get("voicePitch", "")),
+        "voice_volume": str(config.get("voiceVolume", "")),
+        "interviewer_tone": str(config.get("interviewerTone", "encouraging")),
+        "competency_weights": _weights_from_config(config.get("competencyWeights")),
+        "question_style_weights": _question_style_weights_from_config(config.get("questionStyleWeights")),
+        "dynamic_model": dynamic_model,
     }
 
 
@@ -103,6 +132,123 @@ def option_label(group: str, option_id: str) -> str:
         if item.get("id") == option_id:
             return str(item.get("label", option_id))
     return option_id
+
+
+def _question_style_weights_from_config(raw: object) -> dict[str, int]:
+    return _weights_from_config(raw)
+
+
+def _weights_from_config(raw: object) -> dict[str, int]:
+    if not isinstance(raw, dict):
+        return {}
+    weights: dict[str, int] = {}
+    for key, value in raw.items():
+        try:
+            weights[str(key)] = max(0, min(100, int(value)))
+        except (TypeError, ValueError):
+            continue
+    return weights
+
+
+def _deserialize_dynamic_model(raw: object) -> DynamicJobModel | None:
+    """从前端传来的 dynamicModel dict 反序列化为 DynamicJobModel。"""
+    if not isinstance(raw, dict):
+        return None
+    try:
+        competencies = tuple(
+            DynamicCompetency(
+                id=str(c["id"]),
+                name=str(c["name"]),
+                description=str(c.get("description", "")),
+                weight=int(c.get("weight", 20)),
+                observable_signals=tuple(str(s) for s in c.get("observableSignals", [])),
+                weak_signals=tuple(str(s) for s in c.get("weakSignals", [])),
+            )
+            for c in raw.get("competencies", [])
+        )
+        evidence_reqs: list[tuple[str, tuple[DynamicEvidenceRequirement, ...]]] = []
+        for item in raw.get("evidenceRequirements", []):
+            if not isinstance(item, dict):
+                continue
+            cid = str(item.get("competencyId", ""))
+            reqs = tuple(
+                DynamicEvidenceRequirement(
+                    id=str(r["id"]),
+                    name=str(r["name"]),
+                    description=str(r.get("description", "")),
+                    keywords=tuple(str(k) for k in r.get("keywords", [])),
+                )
+                for r in item.get("requirements", [])
+                if isinstance(r, dict)
+            )
+            if cid and reqs:
+                evidence_reqs.append((cid, reqs))
+        rubric_dims = tuple(
+            DynamicRubricDimension(
+                id=str(d["id"]),
+                name=str(d["name"]),
+                description=str(d.get("description", "")),
+                weak_anchor=str(d.get("weakAnchor", "")),
+                normal_anchor=str(d.get("normalAnchor", "")),
+                strong_anchor=str(d.get("strongAnchor", "")),
+            )
+            for d in raw.get("rubricDimensions", [])
+            if isinstance(d, dict)
+        )
+        # competency_weights — 前端传 1-10 评分，归一化为调度权重
+        raw_weights = raw.get("competencyWeights", {})
+        if isinstance(raw_weights, dict):
+            comp_weights = {}
+            for key, value in raw_weights.items():
+                try:
+                    comp_weights[str(key)] = max(1, min(10, int(value)))
+                except (TypeError, ValueError):
+                    comp_weights[str(key)] = 5
+        else:
+            comp_weights = {c.id: c.weight for c in competencies}
+        # 归一化 1-10 评分 → sum=100 调度权重
+        total = sum(comp_weights.values()) or 1
+        comp_weights = {k: max(3, min(60, round(v / total * 100))) for k, v in comp_weights.items()}
+        # question_style_weights
+        raw_styles = raw.get("questionStyleWeights", {})
+        if isinstance(raw_styles, dict):
+            style_weights: dict[str, int] = {}
+            for key in ("open", "evidence", "pressure", "relaxed", "reflection"):
+                try:
+                    style_weights[key] = int(raw_styles.get(key, 0))
+                except (TypeError, ValueError):
+                    style_weights[key] = 0
+        else:
+            style_weights = {"open": 25, "evidence": 35, "pressure": 15, "relaxed": 10, "reflection": 15}
+        # recommended_voice
+        raw_voice = raw.get("recommendedVoice", {})
+        voice: dict[str, str] = {}
+        if isinstance(raw_voice, dict):
+            for key in ("voiceProfileId", "interviewerTone", "voiceRate", "voicePitch", "voiceVolume"):
+                val = raw_voice.get(key)
+                if isinstance(val, str):
+                    voice[key] = val
+
+        return DynamicJobModel(
+            job_title=str(raw.get("jobTitle", "")),
+            job_summary=str(raw.get("jobSummary", "")),
+            core_requirements=tuple(str(s) for s in raw.get("coreRequirements", []) if isinstance(s, str)),
+            interview_focus=tuple(str(s) for s in raw.get("interviewFocus", []) if isinstance(s, str)),
+            competencies=competencies,
+            question_seeds=tuple(str(s) for s in raw.get("questionSeeds", []) if isinstance(s, str)),
+            competency_weights=comp_weights,
+            question_style_weights=style_weights,
+            focus_competency_id=str(raw.get("focusCompetencyId", "")),
+            focus_question_style_id=str(raw.get("focusQuestionStyleId", "open")),
+            evidence_requirements=tuple(evidence_reqs),
+            rubric_dimensions=rubric_dims,
+            recommended_voice=voice,
+            analysis_notes=tuple(str(s) for s in raw.get("analysisNotes", []) if isinstance(s, str)),
+            analysis_source=str(raw.get("analysisSource", "deserialized")),
+            opening_question=str(raw.get("openingQuestion", "")),
+        )
+    except (KeyError, TypeError, ValueError):
+        return None
 
 
 async def main() -> None:
@@ -196,6 +342,12 @@ async def main() -> None:
                         "competencyLabel": option_label("competencies", training_config["competency_id"]),
                         "strategyId": training_config["strategy_id"],
                         "strategyLabel": option_label("strategies", training_config["strategy_id"]),
+                        "jobId": training_config["job_id"],
+                        "jobLabel": training_config["job_label"],
+                        "companyName": training_config["company_card"].company_name if training_config.get("company_card") else "",
+                        "companyVerificationStatus": training_config["company_card"].verification_status if training_config.get("company_card") else "",
+                        "voiceProfileId": training_config["voice_profile_id"],
+                        "interviewerTone": training_config["interviewer_tone"],
                     },
                 )
             )
@@ -356,6 +508,13 @@ async def stream_assistant_reply(
 ) -> None:
     assistant_text = ""
     await publish_json(room, {"type": "assistant.state", "state": "thinking"})
+    await publish_json(
+        room,
+        {
+            "type": "question.plan",
+            **orchestrator.build_question_trace(),
+        },
+    )
     try:
         system_prompt = orchestrator.build_followup_prompt()
         async for chunk in llm_provider.stream_reply(messages, system_prompt=system_prompt):
@@ -385,27 +544,15 @@ async def finish_interview(
         except Exception as error:
             logger.exception("interview evaluation failed")
             report = {
-                "report_quality": "fallback",
+                "report_quality": "evaluation_unavailable",
                 "summary": f"评分生成失败：{error}",
                 "turn_count": orchestrator.state.candidate_turn_count,
                 "coverage_ratio": round(orchestrator.coverage_ratio(), 2),
                 "ability_model": {},
                 "dimensions": [],
-                "evidence_gaps": ["评分链路异常，需要查看后端日志"],
-                "main_weakness": "当前不是候选人表现问题，而是评分链路异常。",
-                "training_plan": {
-                    "theme": "评分链路排查",
-                    "goal": "确认 DeepSeek 与 JSON 评分输出是否正常。",
-                    "tasks": [
-                        {
-                            "name": "重新生成评分",
-                            "exercise": "重新完成一轮短面试后查看调试台和后端日志。",
-                            "method": "先用 1-2 轮短回答测试评分事件是否返回。",
-                            "success_criteria": "前端收到 interview.report，且 report_quality 不再是 fallback。",
-                        }
-                    ],
-                    "duration_minutes": 5,
-                },
+                "evidence_gaps": [],
+                "main_weakness": "评分链路异常，本轮不生成表现判断，避免输出伪报告。",
+                "training_plan": {"theme": "等待重新生成正式报告", "goal": "修复评分链路后重新生成。", "tasks": []},
             }
         await publish_json(room, {"type": "interview.report", "report": report})
         await publish_json(room, {"type": "session.ended", "text": "本轮面试已结束，评分和训练建议已生成。"})
