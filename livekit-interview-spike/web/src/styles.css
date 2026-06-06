@@ -262,6 +262,36 @@ button:disabled {
   font-weight: 800;
 }
 
+.reconnect-screen {
+  display: grid;
+  place-items: start;
+  align-content: center;
+  gap: 0.85rem;
+  width: min(42rem, 100%);
+  min-height: calc(100vh - 4rem);
+  margin: 0 auto;
+  padding: clamp(1.4rem, 4vw, 2.4rem);
+  border: 1px solid rgba(33, 79, 64, 0.12);
+  border-radius: 1.35rem;
+  background:
+    radial-gradient(circle at 82% 18%, rgba(196, 110, 68, 0.14), transparent 26%),
+    linear-gradient(135deg, rgba(251, 252, 247, 0.94), rgba(226, 237, 226, 0.82));
+  box-shadow: 0 24px 60px rgba(32, 47, 39, 0.1);
+}
+
+.reconnect-screen h1 {
+  margin: 0;
+  color: #173c31;
+  font-size: clamp(2rem, 4vw, 3.4rem);
+  line-height: 1;
+}
+
+.reconnect-screen p {
+  margin: 0;
+  color: #607069;
+  line-height: 1.6;
+}
+
 .home-hero {
   display: flex;
   align-items: stretch;

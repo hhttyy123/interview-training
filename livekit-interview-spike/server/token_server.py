@@ -178,7 +178,7 @@ async def analyze_jd_endpoint(request: JdAnalysisRequest) -> dict[str, object]:
         if not role_id and role_label:
             role_id = "dynamic"
         elif not role_id:
-            role_id = "product_manager"
+            raise HTTPException(status_code=400, detail="请先输入或选择目标岗位，再生成岗位 JD 分析")
         return await analyze_jd_with_llm(
             role_id=role_id,
             role_label=role_label,

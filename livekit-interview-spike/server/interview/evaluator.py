@@ -61,8 +61,31 @@ class InterviewEvaluator:
         report.setdefault("evidence_snapshot", orchestrator.evidence_snapshot_text())
         report.setdefault("turn_count", orchestrator.state.candidate_turn_count)
         report.setdefault("coverage_ratio", round(orchestrator.coverage_ratio(), 2))
+        self._normalize_dimension_tone(report)
         report.setdefault("ability_model", self._ability_model_from_dimensions(report.get("dimensions", []), orchestrator))
         return report
+
+    def _normalize_dimension_tone(self, report: dict[str, Any]) -> None:
+        dimensions = report.get("dimensions")
+        if not isinstance(dimensions, list):
+            return
+        for item in dimensions:
+            if not isinstance(item, dict):
+                continue
+            score = item.get("score")
+            if isinstance(score, int):
+                if score <= 2:
+                    item["level"] = item.get("level") or "证据严重不足"
+                elif score <= 4:
+                    item["level"] = item.get("level") or "待补强"
+                elif score <= 6:
+                    item["level"] = item.get("level") or "基础可用"
+            reason = str(item.get("reason", "")).strip()
+            improvement = str(item.get("improvement", "")).strip()
+            if reason and "已看到" not in reason and "优势" not in reason and "有效" not in reason:
+                item["reason"] = f"当前判断：{reason}"
+            if improvement and not improvement.startswith("下一步"):
+                item["improvement"] = f"下一步可以这样补强：{improvement}"
 
     def _ability_model_from_dimensions(self, dimensions: Any, orchestrator: InterviewOrchestrator) -> dict[str, int]:
         default: dict[str, int] = {}
@@ -91,7 +114,7 @@ class InterviewEvaluator:
             rubric_dims = RUBRIC_DIMENSIONS
         return {
             "report_quality": "insufficient_sample",
-            "summary": "本轮回答样本太少，不能生成可信评分。当前只做初步诊断：需要先补充完整项目背景、个人动作和结果证据。",
+            "summary": "本轮回答样本还不够完整，因此暂不做高低分判断。当前先给训练诊断：优先补充项目背景、个人动作和结果证据，下一轮再生成正式评分。",
             "turn_count": orchestrator.state.candidate_turn_count,
             "coverage_ratio": round(orchestrator.coverage_ratio(), 2),
             "ability_model": {},
@@ -101,10 +124,10 @@ class InterviewEvaluator:
                     "name": item.name,
                     "score": None,
                     "level": "暂不评分",
-                    "reason": "候选人回答轮次或内容长度不足，不能进行稳定评分。",
+                    "reason": "当前只看到少量回答，暂不能稳定判断该维度强弱。",
                     "evidence": answer_text[:160] or "没有捕获到足够回答内容。",
-                    "risk": "真实面试中，面试官会认为信息不足，无法判断能力强弱。",
-                    "improvement": "先完成至少 3 个完整回答，覆盖背景、行动、结果和复盘，再生成正式评分。",
+                    "risk": "如果正式面试中也缺少这些信息，面试官会继续追问，而不是直接确认能力水平。",
+                    "improvement": "下一步先完成至少 3 个完整回答，覆盖背景、行动、结果和复盘，再生成正式评分。",
                 }
                 for item in rubric_dims
             ],
@@ -116,7 +139,7 @@ class InterviewEvaluator:
             ],
             "company_fit_bonus": self._default_company_fit(orchestrator, insufficient=True),
             "role_fit": self._default_role_fit(orchestrator, insufficient=True),
-            "main_weakness": "当前最大问题不是某项能力低，而是样本不足，无法支撑可信判断。",
+            "main_weakness": "当前不是能力被判低，而是有效样本不足；先把一个项目讲完整。",
             "training_plan": {
                 "theme": "补全项目经历基础素材",
                 "goal": "先把一个项目讲完整，再进入正式评分。",

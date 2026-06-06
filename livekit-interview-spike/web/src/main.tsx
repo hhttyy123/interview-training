@@ -230,6 +230,7 @@ interface InterviewReport {
 
 type SessionPhase = "idle" | "listening" | "thinking" | "speaking" | "ended";
 type AppView = "home" | "setup" | "report" | "debug";
+type DisconnectIntent = "manual" | "report" | null;
 
 interface InterviewHistoryRecord {
   id: string;
@@ -247,6 +248,7 @@ interface AppDraft {
   view: AppView;
   trainingConfig: TrainingConfig;
   setupStep: number;
+  analysisResult: JdAnalysisResult | null;
 }
 
 const HISTORY_STORAGE_KEY = "interview-training-history-v1";
@@ -319,6 +321,9 @@ const FALLBACK_TRAINING_OPTIONS: TrainingOptions = {
 
 function App() {
   const [session, setSession] = useState<TokenPayload | null>(null);
+  const expectedDisconnectRef = useRef<DisconnectIntent>(null);
+  const reconnectingRef = useRef(false);
+  const reconnectRunRef = useRef(0);
   const [savedDraft] = useState(() => loadAppDraft());
   const [view, setView] = useState<AppView>(savedDraft?.view ?? "home");
   const [health, setHealth] = useState<HealthPayload | null>(null);
@@ -326,10 +331,12 @@ function App() {
   const [trainingOptions, setTrainingOptions] = useState<TrainingOptions>(FALLBACK_TRAINING_OPTIONS);
   const [trainingConfig, setTrainingConfig] = useState<TrainingConfig>(savedDraft?.trainingConfig ?? DEFAULT_TRAINING_CONFIG);
   const [setupStep, setSetupStep] = useState(savedDraft?.setupStep ?? 0);
+  const [analysisResult, setAnalysisResult] = useState<JdAnalysisResult | null>(savedDraft?.analysisResult ?? null);
   const [history, setHistory] = useState<InterviewHistoryRecord[]>(() => loadHistoryRecords());
   const [activeReport, setActiveReport] = useState<InterviewHistoryRecord | null>(() => loadHistoryRecords()[0] ?? null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [reconnectNotice, setReconnectNotice] = useState("");
 
   async function refreshHealth(): Promise<HealthPayload | null> {
     try {
@@ -363,26 +370,75 @@ function App() {
   }, []);
 
   useEffect(() => {
-    saveAppDraft({ view, trainingConfig, setupStep });
-  }, [view, trainingConfig, setupStep]);
+    saveAppDraft({ view, trainingConfig, setupStep, analysisResult });
+  }, [view, trainingConfig, setupStep, analysisResult]);
+
+  async function requestRoomToken(): Promise<TokenPayload> {
+    const response = await fetch(`${API_BASE}/token`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ room: DEFAULT_ROOM, name: "candidate" }),
+    });
+    if (!response.ok) throw new Error(await response.text());
+    return (await response.json()) as TokenPayload;
+  }
 
   async function joinRoom() {
     setLoading(true);
     setError("");
+    expectedDisconnectRef.current = null;
+    setReconnectNotice("");
     await refreshHealth();
     try {
-      const response = await fetch(`${API_BASE}/token`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ room: DEFAULT_ROOM, name: "candidate" }),
-      });
-      if (!response.ok) throw new Error(await response.text());
-      setSession((await response.json()) as TokenPayload);
+      setSession(await requestRoomToken());
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "无法进入面试室");
     } finally {
       setLoading(false);
     }
+  }
+
+  async function recoverRoomConnection() {
+    if (reconnectingRef.current) return;
+    reconnectingRef.current = true;
+    const runId = reconnectRunRef.current + 1;
+    reconnectRunRef.current = runId;
+    setSession(null);
+    setReconnectNotice("网络连接已断开，正在重新进入面试房间...");
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      try {
+        await new Promise((resolve) => window.setTimeout(resolve, attempt * 900));
+        if (reconnectRunRef.current !== runId) return;
+        await refreshHealth();
+        const nextSession = await requestRoomToken();
+        if (reconnectRunRef.current !== runId) return;
+        expectedDisconnectRef.current = null;
+        setSession(nextSession);
+        setReconnectNotice("");
+        setError("");
+        reconnectingRef.current = false;
+        return;
+      } catch (cause) {
+        if (reconnectRunRef.current !== runId) return;
+        setReconnectNotice(`正在尝试恢复连接 (${attempt}/3)...`);
+        if (attempt === 3) {
+          setError(cause instanceof Error ? cause.message : "网络恢复失败，请重新进入面试室");
+        }
+      }
+    }
+    reconnectingRef.current = false;
+    setReconnectNotice("");
+  }
+
+  function handleRoomDisconnected() {
+    if (expectedDisconnectRef.current) {
+      reconnectRunRef.current += 1;
+      expectedDisconnectRef.current = null;
+      setReconnectNotice("");
+      setSession(null);
+      return;
+    }
+    void recoverRoomConnection();
   }
 
   function saveReport(report: InterviewReport, conversation: ConversationEntry[]) {
@@ -405,6 +461,27 @@ function App() {
   }
 
   if (!session) {
+    if (reconnectNotice) {
+      return (
+        <main className="product-shell">
+          <section className="reconnect-screen">
+            <p className="eyebrow">CONNECTION RECOVERY</p>
+            <h1>正在恢复面试连接</h1>
+            <p>{reconnectNotice}</p>
+            <button type="button" className="ghost-button" onClick={() => {
+              reconnectingRef.current = false;
+              reconnectRunRef.current += 1;
+              expectedDisconnectRef.current = null;
+              setReconnectNotice("");
+              setView("setup");
+            }}>
+              返回配置
+            </button>
+          </section>
+        </main>
+      );
+    }
+
     if (view === "setup") {
       return (
         <main className="product-shell">
@@ -418,6 +495,8 @@ function App() {
             onStart={joinRoom}
             step={setupStep}
             onStepChange={setSetupStep}
+            analysisResult={analysisResult}
+            onAnalysisResultChange={setAnalysisResult}
           />
         </main>
       );
@@ -461,6 +540,7 @@ function App() {
           onStart={() => {
             setTrainingConfig(DEFAULT_TRAINING_CONFIG);
             setSetupStep(0);
+            setAnalysisResult(null);
             setView("setup");
           }}
           onOpenRecord={(record) => {
@@ -479,7 +559,8 @@ function App() {
       connect
       audio={false}
       video={false}
-      onDisconnected={() => setSession(null)}
+      onDisconnected={handleRoomDisconnected}
+      key={session.identity}
       className="room"
     >
       <InterviewRoom
@@ -490,6 +571,9 @@ function App() {
         trainingOptions={trainingOptions}
         onTrainingConfigChange={setTrainingConfig}
         onReportComplete={saveReport}
+        onDisconnectIntent={(intent) => {
+          expectedDisconnectRef.current = intent;
+        }}
       />
       <RoomAudioRenderer />
     </LiveKitRoom>
@@ -518,9 +602,10 @@ function loadAppDraft(): AppDraft | null {
     const view: AppView = parsed.view === "setup" || parsed.view === "report" || parsed.view === "debug" ? parsed.view : "home";
     return {
       view,
-      trainingConfig: { ...DEFAULT_TRAINING_CONFIG, ...(parsed.trainingConfig ?? {}) },
-      setupStep: Math.max(0, Math.min(6, Number(parsed.setupStep ?? 0))),
-    };
+        trainingConfig: { ...DEFAULT_TRAINING_CONFIG, ...(parsed.trainingConfig ?? {}) },
+        setupStep: Math.max(0, Math.min(6, Number(parsed.setupStep ?? 0))),
+        analysisResult: parsed.analysisResult ?? null,
+      };
   } catch {
     return null;
   }
@@ -694,6 +779,8 @@ function SetupWizard({
   onStart,
   step,
   onStepChange,
+  analysisResult,
+  onAnalysisResultChange,
 }: {
   config: TrainingConfig;
   options: TrainingOptions;
@@ -704,12 +791,14 @@ function SetupWizard({
   onStart: () => void;
   step: number;
   onStepChange: React.Dispatch<React.SetStateAction<number>>;
+  analysisResult: JdAnalysisResult | null;
+  onAnalysisResultChange: (result: JdAnalysisResult | null) => void;
 }) {
   const [companyLoading, setCompanyLoading] = useState(false);
   const [analysisLoading, setAnalysisLoading] = useState(false);
   const [resumeLoading, setResumeLoading] = useState(false);
-  const [analysisResult, setAnalysisResult] = useState<JdAnalysisResult | null>(null);
   const [analysisError, setAnalysisError] = useState("");
+  const [companyError, setCompanyError] = useState("");
   const [jobFocused, setJobFocused] = useState(false);
   const [companyDetailOpen, setCompanyDetailOpen] = useState(false);
   const selectedRole = options.roles?.find((role) => role.id === config.jobId);
@@ -731,6 +820,7 @@ function SetupWizard({
     .filter((item) => !jobDraft.trim() || item.label.includes(jobDraft) || item.id.includes(jobDraft.toLowerCase()))
     .slice(0, 6);
   const steps = ["目标公司", "目标岗位", "JD 分析", "面试风格", "声音氛围", "个人材料", "最终确认"];
+  const jobInputReady = Boolean(roleLabel().trim());
 
   function patch(next: Partial<TrainingConfig>) {
     onChange({ ...config, ...next });
@@ -740,16 +830,16 @@ function SetupWizard({
     const clean = value.trim();
     const matched = options.jobs.find((item) => item.label === clean || item.id === clean);
     patch({
-      jobId: matched?.id || config.jobId,
+      jobId: matched?.id || "",
       customJobTitle: matched ? "" : clean,
       jdText: "",
     });
-    return matched?.id || config.jobId;
+    return matched?.id || "";
   }
 
   function selectPresetJob(item: { id: string; label: string }) {
     setJobDraft(item.label);
-    setAnalysisResult(null);
+    onAnalysisResultChange(null);
     setAnalysisError("");
     patch({ jobId: item.id, customJobTitle: "", jdText: "" });
     setJobFocused(false);
@@ -758,21 +848,26 @@ function SetupWizard({
   function updateJobDraft(value: string) {
     const matched = options.jobs.find((item) => item.label === value.trim() || item.id === value.trim());
     setJobDraft(value);
-    setAnalysisResult(null);
+    onAnalysisResultChange(null);
     setAnalysisError("");
     patch({
-      jobId: matched?.id || config.jobId,
+      jobId: matched?.id || "",
       customJobTitle: matched ? "" : value.trim(),
       jdText: "",
+      dynamicModel: null,
     });
   }
 
   function roleLabel() {
-    return jobDraft.trim() || config.customJobTitle.trim() || selectedRole?.label || "目标岗位";
+    return jobDraft.trim() || config.customJobTitle.trim() || "";
   }
 
   async function generateCompanyCard() {
-    if (!config.companyName.trim()) return;
+    if (!config.companyName.trim()) {
+      setCompanyError("请输入公司名称后再生成公司资料。");
+      return;
+    }
+    setCompanyError("");
     setCompanyLoading(true);
     try {
       const response = await fetch(`${API_BASE}/company-card`, {
@@ -789,6 +884,11 @@ function SetupWizard({
   }
 
   async function analyzeJob() {
+    const cleanRoleLabel = roleLabel().trim();
+    if (!cleanRoleLabel) {
+      setAnalysisError("请先输入或选择目标岗位，再生成岗位 JD 分析。");
+      return;
+    }
     setAnalysisLoading(true);
     setAnalysisError("");
     try {
@@ -805,7 +905,7 @@ function SetupWizard({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           roleId: committedJobId,
-          roleLabel: roleLabel(),
+          roleLabel: cleanRoleLabel,
           modeId: config.modeId,
           jdText: sourceJdText,
           companyCard,
@@ -816,10 +916,10 @@ function SetupWizard({
         throw new Error(detail || `HTTP ${response.status}`);
       }
       const payload = (await response.json()) as JdAnalysisResult;
-      setAnalysisResult(payload);
+      onAnalysisResultChange(payload);
       patch({
         jobId: committedJobId,
-        customJobTitle: options.jobs.find((item) => item.id === committedJobId)?.label === jobDraft.trim() ? "" : jobDraft.trim(),
+        customJobTitle: options.jobs.find((item) => item.id === committedJobId)?.label === cleanRoleLabel ? "" : cleanRoleLabel,
         jdText: payload.jdSummary || sourceJdText,
         companyCard,
         competencyId: payload.focusCompetencyId || config.competencyId,
@@ -903,11 +1003,16 @@ function SetupWizard({
         {step === 0 && (
           <WizardCard title="选择目标公司">
             <div className="inline-action-field">
-              <input value={config.companyName} placeholder="输入公司名，例如腾讯、字节跳动" onChange={(event) => patch({ companyName: event.target.value })} />
+              <input value={config.companyName} placeholder="输入公司名，例如腾讯、字节跳动" onChange={(event) => {
+                setCompanyError("");
+                patch({ companyName: event.target.value });
+              }} />
               <button type="button" className="secondary-button" disabled={companyLoading || !config.companyName.trim()} onClick={generateCompanyCard}>
                 {companyLoading ? "生成中" : "生成情报"}
               </button>
             </div>
+            {!config.companyName.trim() && <p className="empty">输入公司名称后，才可以搜索并生成公司资料。</p>}
+            {companyError && <p className="error-text">{companyError}</p>}
             {config.companyCard ? (
               <>
                 <button type="button" className="company-summary-strip" onClick={() => setCompanyDetailOpen(true)}>
@@ -922,7 +1027,7 @@ function SetupWizard({
                   <CompanyInsightModal card={config.companyCard} onClose={() => setCompanyDetailOpen(false)} />
                 )}
               </>
-            ) : <p className="empty">也可以直接下一步，做通用岗位面试。</p>}
+            ) : config.companyName.trim() ? <p className="empty">点击“生成情报”后会显示公司资料。</p> : <p className="empty">也可以直接下一步，做通用岗位面试。</p>}
           </WizardCard>
         )}
 
@@ -942,7 +1047,7 @@ function SetupWizard({
               )}
             </div>
             {analysisError && <p className="error-text">{analysisError}</p>}
-            <p className="empty">点击下一步后，系统会分析该岗位的通用 JD 和训练能力模型。</p>
+            <p className="empty">{jobInputReady ? "点击下一步后，系统会分析该岗位的通用 JD 和训练能力模型。" : "请先输入或选择目标岗位，岗位为空时不会生成默认 JD。"}</p>
           </WizardCard>
         )}
 
@@ -1077,7 +1182,7 @@ function SetupWizard({
           <span>第 {step + 1} 步，共 {steps.length} 步</span>
           <button type="button" className="ghost-button" disabled={step === 0 || loading || analysisLoading} onClick={() => onStepChange((current) => Math.max(0, current - 1))}>上一步</button>
           {step < steps.length - 1 ? (
-            <button type="button" disabled={loading || analysisLoading} onClick={() => void nextStep()}>{analysisLoading ? "分析中..." : "下一步"}</button>
+            <button type="button" disabled={loading || analysisLoading || (step === 1 && !jobInputReady)} onClick={() => void nextStep()}>{analysisLoading ? "分析中..." : "下一步"}</button>
           ) : (
             <button type="button" disabled={loading} onClick={onStart}>{loading ? "正在进入..." : "开始面试"}</button>
           )}
@@ -1878,6 +1983,7 @@ function InterviewRoom({
   trainingOptions,
   onTrainingConfigChange,
   onReportComplete,
+  onDisconnectIntent,
 }: {
   room: string;
   health: HealthPayload | null;
@@ -1886,6 +1992,7 @@ function InterviewRoom({
   trainingOptions: TrainingOptions;
   onTrainingConfigChange: (config: TrainingConfig) => void;
   onReportComplete: (report: InterviewReport, conversation: ConversationEntry[]) => void;
+  onDisconnectIntent: (intent: DisconnectIntent) => void;
 }) {
   const assistant = useVoiceAssistant();
   const livekitRoom = useRoomContext();
@@ -1898,6 +2005,7 @@ function InterviewRoom({
   const interviewReportRef = useRef<InterviewReport | null>(null);
   const conversationRef = useRef<ConversationEntry[]>([]);
   const onReportCompleteRef = useRef(onReportComplete);
+  const onDisconnectIntentRef = useRef(onDisconnectIntent);
   const [partialTranscript, setPartialTranscript] = useState("");
   const [finalTranscript, setFinalTranscript] = useState("");
   const [assistantText, setAssistantText] = useState("");
@@ -1925,6 +2033,10 @@ function InterviewRoom({
   useEffect(() => {
     onReportCompleteRef.current = onReportComplete;
   }, [onReportComplete]);
+
+  useEffect(() => {
+    onDisconnectIntentRef.current = onDisconnectIntent;
+  }, [onDisconnectIntent]);
 
   function setPhase(next: SessionPhase) {
     phaseRef.current = next;
@@ -2175,6 +2287,7 @@ function InterviewRoom({
         setAssistantState("评分和训练建议已生成");
         addDebugEvent("已收到面试评分报告");
         if (event.report) {
+          onDisconnectIntentRef.current("report");
           onReportCompleteRef.current(event.report, conversationRef.current);
           window.setTimeout(() => void livekitRoom.disconnect(), 80);
         }
@@ -2216,6 +2329,18 @@ function InterviewRoom({
       void setMicEnabled(false);
     }
 
+    function onReconnecting() {
+      addDebugEvent("LiveKit 正在自动重连");
+      setLivekitConnected(false);
+      setAssistantState("网络波动，正在恢复连接...");
+    }
+
+    function onReconnected() {
+      addDebugEvent("LiveKit 已自动恢复连接");
+      setLivekitConnected(true);
+      setAssistantState("连接已恢复，可以继续面试");
+    }
+
     function onDisconnected() {
       addDebugEvent("LiveKit 已断开");
       setLivekitConnected(false);
@@ -2231,6 +2356,8 @@ function InterviewRoom({
 
     livekitRoom.on(RoomEvent.DataReceived, onData);
     livekitRoom.on(RoomEvent.Connected, onConnected);
+    livekitRoom.on(RoomEvent.Reconnecting, onReconnecting);
+    livekitRoom.on(RoomEvent.Reconnected, onReconnected);
     livekitRoom.on(RoomEvent.Disconnected, onDisconnected);
     livekitRoom.on(RoomEvent.ParticipantConnected, onParticipantConnected);
     livekitRoom.on(RoomEvent.TrackSubscribed, onTrackSubscribed);
@@ -2238,6 +2365,8 @@ function InterviewRoom({
     return () => {
       livekitRoom.off(RoomEvent.DataReceived, onData);
       livekitRoom.off(RoomEvent.Connected, onConnected);
+      livekitRoom.off(RoomEvent.Reconnecting, onReconnecting);
+      livekitRoom.off(RoomEvent.Reconnected, onReconnected);
       livekitRoom.off(RoomEvent.Disconnected, onDisconnected);
       livekitRoom.off(RoomEvent.ParticipantConnected, onParticipantConnected);
       livekitRoom.off(RoomEvent.TrackSubscribed, onTrackSubscribed);
@@ -2257,7 +2386,10 @@ function InterviewRoom({
         </div>
         <div className="header-actions">
           <span className="pill">{livekitConnected ? "房间已连接" : "正在连接"}</span>
-          <button type="button" className="ghost-button" onClick={() => livekitRoom.disconnect()}>
+          <button type="button" className="ghost-button" onClick={() => {
+            onDisconnectIntentRef.current("manual");
+            void livekitRoom.disconnect();
+          }}>
             返回配置
           </button>
           <button type="button" className="ghost-button" onClick={() => setShowDebug((current) => !current)}>
