@@ -31,3 +31,18 @@
 2. 增加实时链路指标：每轮回答记录 ASR、LLM、TTS、轮次判断耗时，先让问题可被量化。
 3. 优化 TTS：优先尝试稳定的低延迟中文 TTS；如果继续用 LiveKit，最好让 AI 语音进入房间音轨，而不只是前端本地播放。
 4. 升级 VAD：从 RMS 门限升级到 WebRTC VAD/Silero VAD + 环境基线，再评估是否需要说话人识别。
+
+## 2026-06-06 补充：下一阶段收口重点
+
+当前最应该优先处理的不是继续堆功能，而是把面试过程中现场生成的数据沉淀成稳定的 `SessionState`，并在面试结束时组装成标准 `EvaluationRequest`。
+
+推荐新增一条评价数据闭环主线：
+
+1. 在后端维护统一 `SessionState`，保存 `companyCard`、`jobModel`、`interviewConfig`、`questionTrace`、`transcript`、`evidenceSnapshot` 和 `sessionMeta`。
+2. 将当前 `question.plan` / `build_question_trace()` 从调试事件升级为正式 `questionTrace[]` 记录。
+3. 将 `orchestrator.turns` 转为结构化 `transcript[]`，并补充 `answerMeta`，记录过短回答、中断、断网、ASR 质量等信息。
+4. 面试结束时从 `SessionState` 组装 MVP 版 `EvaluationRequest`。
+5. 当前内置评价器先消费 `EvaluationRequest`，后续外部评价 Agent 也消费同一契约。
+6. 评价结果通过 adapter 转成当前前端兼容的报告结构。
+
+这条主线的详细方案见 `../../docs/technical/project-optimization-roadmap.md` 和 `../../docs/technical/evaluation-agent-contract.md`。
