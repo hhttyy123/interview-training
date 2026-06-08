@@ -906,7 +906,98 @@ questionTrace.push(questionPlan)
 6. 评价 Agent 先返回当前前端兼容的报告结构。
 7. 后续再补结构化 `perCompetency`、`answerMeta`、`answerCards`。
 
-## 17. 一句话总结
+## 17. 当前已落地契约模型
+
+当前项目已新增 Python 侧契约模型：
+
+```text
+livekit-interview-spike/server/interview/followup/evaluation_contract.py
+```
+
+这些模型对应评价 Agent 对接时需要的 TypeScript 契约。
+
+```ts
+export type EvaluationTurn = {
+  turnIndex: number;
+  question: string;
+  answer: string;
+  capabilityId: string;
+  questionStyleId: string;
+};
+
+export type EvaluationQuestionTraceItem = {
+  questionId: string;
+  turnIndex: number;
+  question: string;
+  stage: string;
+  competencyId: string;
+  competencyName: string;
+  strategyId: string;
+  strategyName: string;
+  methodologyIds: string[];
+  methodologyNotes: string[];
+  questionStyleId: string;
+  interviewStyleId: string;
+  pressureLevel: number;
+  anchor: Record<string, unknown>;
+  evidenceTargetIds: string[];
+  missingEvidenceBeforeQuestion: Array<Record<string, unknown>>;
+  coveredEvidenceBeforeQuestion: Array<Record<string, unknown>>;
+  selectedBecause?: string;
+  alternativesConsidered?: Array<[string, number, string]>;
+};
+
+export type EvaluationEvidenceSnapshot = {
+  slots: Array<Record<string, unknown>>;
+  coverageRatio: number;
+  source: "followup_strategy_library" | string;
+};
+
+export type EvaluationRequest = {
+  sessionId: string;
+  targetRole: string;
+  turns: EvaluationTurn[];
+  questionTrace: EvaluationQuestionTraceItem[];
+  evidenceSnapshot: EvaluationEvidenceSnapshot;
+  companyCard?: Record<string, unknown> | null;
+  careerProfile?: Record<string, unknown> | null;
+  jobModel?: Record<string, unknown> | null;
+  metadata?: Record<string, unknown>;
+};
+
+export type EvaluationDimensionResult = {
+  id: string;
+  name: string;
+  score: number | null;
+  level: string;
+  reason: string;
+  evidence: string;
+  risk?: string;
+  improvement?: string;
+};
+
+export type EvaluationResponse = {
+  reportQuality: "full" | "insufficient_sample" | "evaluation_unavailable" | string;
+  summary: string;
+  dimensions: EvaluationDimensionResult[];
+  evidenceGaps: string[];
+  abilityModel: Record<string, number>;
+  companyFitBonus?: Record<string, unknown> | null;
+  roleFit?: Record<string, unknown> | null;
+  mainWeakness?: string;
+  trainingPlan?: Record<string, unknown> | null;
+};
+```
+
+当前映射工具：
+
+- `question_trace_item_from_plan()`：把 `QuestionPlan` 转成评价 Agent 可读的 `EvaluationQuestionTraceItem`。
+- `evidence_snapshot_from_slots()`：把 `EvidenceSlot[]` 转成 `EvaluationEvidenceSnapshot`。
+- `to_jsonable()`：把 Python dataclass 契约转成可 JSON 序列化结构。
+
+当前仍未自动接入主评分链路；原因是评价 Agent 是独立协作方，应该先确认字段契约，再替换现有 `InterviewEvaluator` 的 prompt-only 输入方式。
+
+## 18. 一句话总结
 
 ```text
 当前项目已经能生成公司资料、岗位模型、追问计划、问答记录和证据覆盖文本。

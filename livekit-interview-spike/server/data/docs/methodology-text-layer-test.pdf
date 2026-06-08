@@ -1,0 +1,108 @@
+%PDF-1.3
+%‚„œ”
+1 0 obj
+<<
+/Producer (pypdf)
+/Title (Methodology Text Layer Test)
+/Subject (RAG PDF parsing test document)
+>>
+endobj
+2 0 obj
+<<
+/Type /Pages
+/Count 1
+/Kids [ 4 0 R ]
+>>
+endobj
+3 0 obj
+<<
+/Type /Catalog
+/Pages 2 0 R
+>>
+endobj
+4 0 obj
+<<
+/Type /Page
+/Resources <<
+/Font <<
+/F1 <<
+/Type /Font
+/Subtype /Type1
+/BaseFont /Helvetica
+>>
+>>
+>>
+/MediaBox [ 0.0 0.0 595 842 ]
+/Parent 2 0 R
+/Contents <<
+/Length 1377
+>>
+stream
+BT
+/F1 11 Tf
+50 790 Td
+14 TL
+(Interview methodology PDF test document) Tj
+T*
+() Tj
+T*
+(This PDF has a real text layer and is generated without extra dependencies.) Tj
+T*
+(It is used to test whether pypdf can extract text from PDF files before RAG ingestion.) Tj
+T*
+() Tj
+T*
+(Section 1: STAR and BEI evidence collection) Tj
+T*
+(A structured interview should collect Situation, Task, Action and Result evidence.) Tj
+T*
+(If a candidate only says the team finished a project, ask about personal contribution.) Tj
+T*
+(If a candidate only says the result was good, ask about metrics, feedback and attribution.) Tj
+T*
+() Tj
+T*
+(Section 2: Pressure attribution probe) Tj
+T*
+(Pressure questions should challenge evidence quality, not attack the candidate.) Tj
+T*
+(Ask whether the result would still happen without the candidate's action.) Tj
+T*
+(Ask whether other factors could explain the metric change.) Tj
+T*
+() Tj
+T*
+(Section 3: Technical deep dive) Tj
+T*
+(Technical interviews should inspect constraints, tradeoffs, validation and failure handling.) Tj
+T*
+(Do not only ask terminology questions. Anchor the probe in a real project decision.) Tj
+T*
+() Tj
+T*
+(Section 4: Business case) Tj
+T*
+(Business case probes should inspect goal definition, user segmentation, metrics and risks.) Tj
+T*
+(A strong answer explains assumptions, alternatives, priority and validation plan.) Tj
+T*
+ET
+endstream
+>>
+endobj
+xref
+0 5
+0000000000 65535 f 
+0000000015 00000 n 
+0000000132 00000 n 
+0000000191 00000 n 
+0000000240 00000 n 
+trailer
+<<
+/Size 5
+/Root 3 0 R
+/Info 1 0 R
+>>
+startxref
+1829
+%%EOF

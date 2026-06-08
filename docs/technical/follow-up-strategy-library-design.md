@@ -1371,42 +1371,99 @@ type StrategySelectionResult = {
 
 ## 19. 推荐实施顺序
 
-第一阶段：策略库骨架
+第一阶段：先建追问策略骨架。
 
-1. 新增 `followup/models.py`。
-2. 定义 `QuestionPlan`、`FollowUpStrategy`、`EvidenceSlot`、`StrategySelectionResult`。
-3. 新增 `strategy_library.py`，先录入 30 个通用策略。
-4. 新增 `strategy_selector.py`，实现打分选择。
+1. 新增 `followup/models.py`，定义核心数据结构。
+2. 新增 `strategy_library.py`，先录入通用策略 seed，后续扩展到不少于 30 个。
+3. 新增 `methodology.py`、`strategy_selector.py`、`question_plan_builder.py`、`prompt_renderer.py`。
+4. 目标是让策略可以被选择、组装成 `QuestionPlan`，并渲染为 LLM prompt。
 
-第二阶段：证据状态机
+第二阶段：做 RAG 方法论库。
 
-1. 新增 `EvidenceSlot` 状态更新。
-2. 将关键词命中降级为弱信号。
-3. 增加规则判断：数字、角色、动作、结果、前后对比、归因。
-4. 后续再加 LLM evidence judge。
+1. 定义 `MethodologyCard` 的持久化格式。
+2. 建立本地方法论卡片目录或轻量索引。
+3. 新增 `methodology_retriever.py`。
+4. 根据策略类别、面试风格、能力原型、证据缺口检索相关方法论卡片。
+5. 注意：RAG 只提供专业依据，不能绕过策略库直接生成问题。
 
-第三阶段：Orchestrator 接入
+第三阶段：职业通用化。
+
+1. 新增 `career_profile_builder.py`，从任意岗位名称、JD、岗位要求中生成 `CareerProfile`。
+2. 实现 `RoleFamily` 与 `CompetencyArchetype` 映射。
+3. 从 `CareerProfile` 生成职业通用 `EvidenceSlot`。
+4. 用任意岗位输入验证策略选择，而不是只测预置岗位。
+
+第四阶段：证据质量判断升级。
+
+1. 新增 `evidence_judge.py`。
+2. 提供 LLM evidence judge prompt、结构化 JSON 解析、`EvidenceUpdate` 应用和 fallback。
+3. 将关键词/规则判断降级为弱信号和兜底。
+4. 目标是让证据质量判断以 LLM 为主、规则为辅。
+
+第五阶段：把 RAG 接进追问生成。
 
 1. `build_question_trace()` 升级为基于 `QuestionPlan`。
 2. `build_followup_prompt()` 改为渲染 `QuestionPlan`。
-3. 每轮保存完整 `questionTrace[]`。
-4. 保持前端现有 `question.plan` 事件兼容。
+3. `QuestionPlan` 写入检索到的 `methodologyIds` 和方法论摘要。
+4. 每轮保存完整 `questionTrace[]`。
+5. 保持前端现有 `question.plan` 事件兼容。
 
-第四阶段：职业通用化策略
+第六阶段：评价 Agent 对齐。
 
-1. 实现 `CareerProfile` 动态生成。
-2. 实现 `RoleFamily` 与 `CompetencyArchetype` 映射。
-3. 实现职业族策略包。
-4. 用任意岗位输入验证策略选择，而不是只测预置岗位。
-
-第五阶段：测试和调优
-
-1. 建立 20 个可回放回答样本。
-2. 测试不同风格下策略差异。
-3. 测试证据覆盖变化。
-4. 测试评价 Agent 能读取 `questionTrace`。
+1. `questionTrace` 增加 `strategyId`、`methodologyIds`、`evidenceTarget`、`anchor`、`selectedBecause`。
+2. `EvaluationRequest` 接收完整追问策略轨迹。
+3. 评价 Agent 使用 `questionTrace` 判断系统是否问到位、是否给过补证据机会。
+4. 建立可回放样本，测试追问策略和评价结果是否一致。
 
 ## 20. 方法论知识库与 RAG
+
+### 20.0 当前落地阶段路线
+
+为了避免实现顺序和设计文档脱节，当前按以下阶段推进：
+
+第一阶段：先建追问策略骨架。
+
+- 新增 `followup/models.py`，定义 `QuestionPlan`、`FollowUpStrategy`、`EvidenceSlot`、`CareerProfile`、`MethodologyCard`、`StrategySelectionResult`。
+- 新增 `strategy_library.py`，先放通用策略 seed，后续扩展到不少于 30 个。
+- 新增 `methodology.py`、`strategy_selector.py`、`question_plan_builder.py`、`prompt_renderer.py`。
+- 目标是让策略可以被选择、组装成 `QuestionPlan`，并渲染为 LLM prompt。
+
+第二阶段：做 RAG 方法论库。
+
+- 定义 `MethodologyCard` 的持久化格式。
+- 建立本地方法论卡片目录或轻量索引。
+- 新增 `methodology_retriever.py`。
+- 根据策略类别、面试风格、能力原型、证据缺口检索相关方法论卡片。
+- RAG 只提供专业依据，不能绕过策略库直接生成问题。
+
+第三阶段：职业通用化。
+
+- 新增 `career_profile_builder.py`，从任意岗位名称、JD、岗位要求中生成 `CareerProfile`。
+- 实现 `RoleFamily` 与 `CompetencyArchetype` 映射。
+- 从 `CareerProfile` 生成职业通用 `EvidenceSlot`。
+- 用任意岗位输入验证策略选择，而不是只测预置岗位。
+
+第四阶段：证据质量判断升级。
+
+- 新增 `evidence_judge.py`。
+- 提供 LLM evidence judge prompt、结构化 JSON 解析、`EvidenceUpdate` 应用和 fallback。
+- 将关键词/规则判断降级为弱信号和兜底。
+- 目标是让证据质量判断以 LLM 为主、规则为辅。
+
+第五阶段：把 RAG 接进追问生成。
+
+- `build_question_trace()` 升级为基于 `QuestionPlan`。
+- `build_followup_prompt()` 改为渲染 `QuestionPlan`。
+- `QuestionPlan` 写入检索到的 `methodologyIds` 和方法论摘要。
+- 每轮保存完整 `questionTrace[]`。
+- 保持前端现有 `question.plan` 事件兼容。
+
+第六阶段：评价 Agent 对齐。
+
+- `questionTrace` 增加 `strategyId`、`methodologyIds`、`evidenceTarget`、`anchor`、`selectedBecause`。
+- `EvaluationRequest` 接收完整追问策略轨迹。
+- 评价 Agent 使用 `questionTrace` 判断系统是否问到位、是否给过补证据机会。
+- 建立可回放样本，测试追问策略和评价结果是否一致。
 
 追问策略库可以先用结构化策略配置落地，但如果目标是长期专业化，建议建设一个“面试方法论知识库”。
 
@@ -1510,6 +1567,257 @@ SessionState
 - 资料来源必须有来源类型和授权说明。
 - 用户删除某个资料源后，系统仍能降级到通用策略库。
 - 不允许把未经授权的书籍全文作为默认知识库。
+
+## 20.7 第二阶段落地实现：服务器可部署 RAG
+
+当前第二阶段采用 **Qdrant + OpenAI-compatible Embedding Provider**，而不是只做本地 JSON/关键词检索。这样后续上线服务器时，向量库可以作为独立服务部署，应用服务只通过 `QDRANT_URL` 连接。
+
+已落地的工程结构：
+
+```text
+livekit-interview-spike/
+  docker-compose.yml                         # 新增 qdrant 服务和持久化 volume
+  .env.example                                # 新增 RAG / Qdrant / Embedding 配置
+  server/
+    requirements.txt                          # 新增 qdrant-client
+    interview/followup/rag/
+      models.py                               # MethodologySource / MethodologyChunk / RetrievalQuery
+      chunker.py                              # 方法论资料切块
+      embeddings.py                           # OpenAI-compatible embedding 抽象
+      vector_store.py                         # 向量库协议
+      qdrant_store.py                         # Qdrant 实现
+      retriever.py                            # MethodologyRetriever
+      ingest.py                               # JSONL/内存资料入库入口
+```
+
+第二阶段的边界：
+
+- 只负责建立“可入库、可向量化、可检索、可部署”的方法论知识库能力。
+- 不直接改当前追问生成逻辑，避免在第五阶段之前影响现有面试流程。
+- `local_hash` embedding 只允许用于离线冒烟验证，不能作为正式检索质量方案。
+- 生产默认使用真实 embedding API；只要接口兼容 `/embeddings`，就可以换 OpenAI、SiliconFlow/BGE-M3、火山、阿里云等供应商。
+
+上线部署形态：
+
+```text
+server app
+  -> Embedding API
+  -> Qdrant collection: interview_methodology
+```
+
+核心环境变量：
+
+```text
+RAG_VECTOR_STORE=qdrant
+QDRANT_URL=http://localhost:6333
+QDRANT_COLLECTION=interview_methodology
+RAG_EMBEDDING_PROVIDER=openai_compatible
+RAG_EMBEDDING_BASE_URL=https://api.openai.com/v1
+RAG_EMBEDDING_API_KEY=your_embedding_api_key
+RAG_EMBEDDING_MODEL=text-embedding-3-small
+RAG_EMBEDDING_DIMENSION=1536
+RAG_CHUNK_SIZE=900
+RAG_CHUNK_OVERLAP=120
+RAG_RETRIEVAL_LIMIT=6
+```
+
+方法论资料建议以 JSONL 作为入库源格式，每行一个 `MethodologySource`：
+
+```json
+{"source_id":"bei-star-001","title":"STAR 行为面试采证","content":"...","source_type":"book_note","source_url":"","license_note":"用户整理笔记","metadata":{"strategy_categories":["evidence_probe"],"role_families":["general"],"competency_archetypes":["execution"],"evidence_categories":["action","result"]}}
+```
+
+检索时不应该只靠自然语言 query，而应带上结构化过滤条件：
+
+```text
+query_text: 当前策略、证据缺口、候选人回答摘要
+strategy_category: evidence_probe / depth_probe / pressure_challenge ...
+question_style_id: open / evidence / pressure / reflection ...
+interview_style_id: structured / pressure / relaxed ...
+role_family: generated role family
+competency_archetypes: 通用能力原型
+evidence_categories: 当前缺失证据类型
+```
+
+这套结构是第五阶段接入追问生成的基础：`StrategySelector` 仍然先决定追问策略，RAG 只补充方法论依据和专业表达，不允许绕过策略库直接让模型自由出题。
+
+## 20.8 第三阶段落地实现：职业通用化
+
+第三阶段不采用“产品经理、前端、运营”这类少数预置岗位分支，而是采用下面的通用链路：
+
+```text
+role_title + jd_text + user_context
+-> RoleFamily
+-> CompetencyArchetype[]
+-> CareerProfile
+-> EvidenceSlot[]
+-> StrategySelector / QuestionPlanBuilder
+```
+
+已落地模块：
+
+```text
+livekit-interview-spike/server/interview/followup/career_profile_builder.py
+```
+
+核心能力：
+
+- `build_career_profile()`：从任意岗位名、JD、用户补充中推断 `CareerProfile`。
+- `build_evidence_slots_for_career()`：根据能力原型生成结构化 `EvidenceSlot`，供追问策略选择使用。
+- 岗位无法明确识别时降级到 `general`，不会默认套用产品经理、技术岗或其他固定岗位。
+- 当前使用职业族群信号和能力原型信号做确定性生成，后续可以在同一接口下替换为 LLM 生成 + 规则校验。
+
+当前覆盖的职业族群不是“最终岗位清单”，而是通用归纳层：
+
+```text
+product_business
+operations_growth
+engineering
+data_analytics
+design_creative
+marketing_brand
+sales_customer
+consulting_strategy
+finance_risk
+hr_admin
+research_academic
+education_training
+medical_healthcare
+legal_compliance
+supply_chain_manufacturing
+public_service
+general
+```
+
+这里的重点不是把所有岗位写死，而是把岗位映射到可泛化的工作对象、交付物、指标、协作对象、风险类型和能力原型。比如“新能源供应链计划专员”会进入 `supply_chain_manufacturing`，再生成执行交付、分析推理、风险意识、协作影响等证据槽，而不是落到某个预置样例。
+
+后续第四阶段升级证据质量判断时，`EvidenceSlot` 会从当前的初始证据槽变成 LLM evidence judge 的判断目标；第五阶段接入 RAG 时，`CareerProfile` 会参与方法论检索过滤。
+
+## 20.9 第四阶段落地实现：证据质量判断升级
+
+第四阶段新增独立 evidence judge 模块：
+
+```text
+livekit-interview-spike/server/interview/followup/evidence_judge.py
+```
+
+核心原则：
+
+- LLM 是主判断层，负责理解回答语义、岗位语境、证据槽和质量标准。
+- 规则只做弱信号和兜底，不允许单独决定某个证据槽已经高质量覆盖。
+- 没有 LLM 或 LLM 返回异常时，可以使用规则兜底，但结果必须标记 `fallback_used=true`。
+- 当前阶段仍然不替换现有 `evidence_state.py` 主链路，避免突然改变线上追问节奏。
+
+输入：
+
+```text
+candidate_answer
+candidate_slots: EvidenceSlot[]
+context_summary
+rule_signals
+```
+
+输出：
+
+```ts
+type EvidenceJudgeResult = {
+  updates: EvidenceUpdate[];
+  ruleSignals: RuleEvidenceSignals;
+  modelRationale: string;
+  fallbackUsed: boolean;
+  rawResponse: string;
+};
+```
+
+LLM prompt 明确要求返回：
+
+```ts
+type EvidenceUpdate = {
+  slotId: string;
+  status: "missing" | "mentioned" | "partial" | "supported" | "strong" | "contradictory";
+  confidence: number;
+  excerpt: string;
+  rationale: string;
+  nextBestProbe?: string;
+};
+```
+
+规则信号当前只包括数字、时间、个人角色、动作、结果、前后对比、复盘、空泛词数量、回答长度等显性指标。这些信号只进入 prompt 辅助 LLM 判断，不能替代 LLM 语义判断。
+
+## 20.10 第五阶段落地实现：RAG 接进追问生成
+
+第五阶段采用“旁路增强”接入方式，避免 RAG 绕过追问策略直接生成问题。
+
+已落地模块：
+
+```text
+livekit-interview-spike/server/interview/followup/rag_integration.py
+```
+
+新增链路：
+
+```text
+QuestionPlan
+-> build_retrieval_query_from_plan()
+-> MethodologyRetriever
+-> attach_methodology_results()
+-> QuestionPlan.methodology_notes
+-> PromptRenderer
+```
+
+关键边界：
+
+- `StrategySelector` 仍然先决定追问策略。
+- RAG 只把方法论依据补进 `QuestionPlan.methodology_notes`。
+- PromptRenderer 会渲染检索到的方法论摘要，但仍要求 LLM 只输出一个中文追问。
+- 当前没有在主面试循环中自动调用 `enrich_question_plan_with_rag()`，需要在完成向量库入库和效果验证后再打开。
+
+`QuestionPlan` 新增字段：
+
+```ts
+type QuestionPlan = {
+  methodologyIds: string[];
+  methodologyNotes: string[];
+};
+```
+
+`methodologyIds` 用于追踪方法论来源，`methodologyNotes` 用于给 LLM 提供短摘要。评价 Agent 后续可以通过这两个字段判断系统当时依据了哪些专业方法论。
+
+## 20.11 第六阶段落地实现：评价 Agent 对齐
+
+第六阶段新增评价 Agent 契约模型：
+
+```text
+livekit-interview-spike/server/interview/followup/evaluation_contract.py
+docs/technical/evaluation-agent-contract.md
+```
+
+核心结构：
+
+```text
+EvaluationTurn
+EvaluationQuestionTraceItem
+EvaluationEvidenceSnapshot
+EvaluationRequest
+EvaluationResponse
+```
+
+关键映射：
+
+- `QuestionPlan` -> `EvaluationQuestionTraceItem`
+- `EvidenceSlot[]` -> `EvaluationEvidenceSnapshot`
+- `QuestionTraceDecision` -> `selectedBecause` / `alternativesConsidered`
+- `methodologyIds` / `methodologyNotes` -> 评价 Agent 判断“系统当时依据了什么方法论”
+
+第六阶段的重点不是让评价 Agent 重新推理追问策略，而是让它读懂追问 Agent 当时的采证意图。这样低分报告才能区分：
+
+- 候选人确实没有提供证据。
+- 系统没有给足补证机会。
+- 问题策略过早进入压力追问。
+- RAG 方法论依据不足或不匹配。
+- 证据槽已覆盖但评价 Agent 没有读取到。
+
+当前仍未替换现有 `InterviewEvaluator` 主链路。正式接入前，需要和评价 Agent 负责方确认字段命名、版本号、camelCase/snake_case adapter、以及历史报告兼容策略。
 
 ## 21. 一句话结论
 

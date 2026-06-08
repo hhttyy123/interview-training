@@ -1,0 +1,6 @@
+*
+!.gitignore
+!README.md
+!bge-m3/
+bge-m3/*
+!bge-m3/.gitkeep
