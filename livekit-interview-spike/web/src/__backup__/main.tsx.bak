@@ -801,10 +801,6 @@ function SetupWizard({
   const [companyError, setCompanyError] = useState("");
   const [jobFocused, setJobFocused] = useState(false);
   const [companyDetailOpen, setCompanyDetailOpen] = useState(false);
-  const [resumeModalOpen, setResumeModalOpen] = useState(false);
-  const [resumePdfUrl, setResumePdfUrl] = useState<string | null>(() => {
-    try { return window.localStorage.getItem("resume-pdf-data"); } catch { return null; }
-  });
   const selectedRole = options.roles?.find((role) => role.id === config.jobId);
   // 优先使用动态模型的能力维度，否则用预设岗位的
   const dynamicCompetencies: Array<{ id: string; label: string; description?: string; defaultWeight?: number }> =
@@ -947,14 +943,6 @@ function SetupWizard({
   async function parseResumeFile(file: File | null) {
     if (!file) return;
     setResumeLoading(true);
-    // 将 PDF 存为 base64，持久化到 localStorage，刷新不丢
-    const reader = new FileReader();
-    reader.onload = () => {
-      const dataUrl = reader.result as string;
-      setResumePdfUrl(dataUrl);
-      try { window.localStorage.setItem("resume-pdf-data", dataUrl); } catch {}
-    };
-    reader.readAsDataURL(file);
     try {
       const form = new FormData();
       form.append("file", file);
@@ -1169,14 +1157,10 @@ function SetupWizard({
               <input type="file" accept=".pdf,application/pdf" disabled={resumeLoading} onChange={(event) => void parseResumeFile(event.target.files?.[0] || null)} />
             </label>
             {config.resumeText && (
-              <button type="button" className="company-summary-strip" onClick={() => setResumeModalOpen(true)}>
-                <span><strong>个人简历</strong><small>{config.resumeText.length} 字</small></span>
-                <em>{config.resumeText.slice(0, 80)}{config.resumeText.length > 80 ? "…" : ""}</em>
-                <b>查看</b>
-              </button>
-            )}
-            {resumeModalOpen && config.resumeText && (
-              <ResumeModal text={config.resumeText} pdfUrl={resumePdfUrl} onClose={() => setResumeModalOpen(false)} />
+              <div className="resume-preview-card">
+                <div><strong>简历预览</strong><span>{config.resumeText.length} 字</span></div>
+                <p>{config.resumeText.slice(0, 700)}{config.resumeText.length > 700 ? "..." : ""}</p>
+              </div>
             )}
           </WizardCard>
         )}
@@ -1286,41 +1270,6 @@ function CompanyInsightModal({ card, onClose }: { card: CompanyCard; onClose: ()
   );
 }
 
-function ResumeModal({ text, pdfUrl, onClose }: { text: string; pdfUrl?: string | null; onClose: () => void }) {
-  useEffect(() => {
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    function handleKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") onClose();
-    }
-    window.addEventListener("keydown", handleKeyDown);
-    return () => {
-      document.body.style.overflow = previousOverflow;
-      window.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [onClose]);
-
-  return (
-    <div className="company-modal-backdrop" role="presentation" onMouseDown={onClose}>
-      <section className="company-modal" role="dialog" aria-modal="true" aria-label="简历全文" onMouseDown={(event) => event.stopPropagation()} style={{ maxWidth: "56rem", height: "min(95vh, 52rem)", display: "flex", flexDirection: "column" }}>
-        <header style={{ flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0.7rem 1rem", borderBottom: "1px solid rgba(33,79,64,0.1)" }}>
-          <span style={{ fontWeight: 850, color: "#214f40", fontSize: "0.95rem" }}>个人简历{pdfUrl ? "（原始 PDF）" : `（${text.length} 字）`}</span>
-          <button type="button" aria-label="关闭简历" onClick={onClose} style={{ width: "1.8rem", height: "1.8rem", border: "1px solid rgba(33,79,64,0.12)", borderRadius: "50%", background: "rgba(255,255,255,0.72)", color: "#214f40", fontSize: "1rem", cursor: "pointer", display: "grid", placeItems: "center" }}>×</button>
-        </header>
-        <div style={{ flex: 1, minHeight: 0, padding: 0 }}>
-          {pdfUrl ? (
-            <iframe src={pdfUrl} style={{ width: "100%", height: "100%", border: "none", display: "block" }} title="PDF 简历预览" />
-          ) : (
-            <div style={{ padding: "1.2rem", whiteSpace: "pre-wrap", wordBreak: "break-word", fontFamily: "'PingFang SC', 'Microsoft YaHei UI', sans-serif", fontSize: "0.95rem", lineHeight: 1.85, color: "#1a2e1a", height: "100%", overflow: "auto" }}>
-              {text}
-            </div>
-          )}
-        </div>
-      </section>
-    </div>
-  );
-}
-
 function SourceNotesDetails({ items }: { items?: string[] }) {
   const safeItems = items?.filter(Boolean).slice(0, 5) ?? [];
   return (
@@ -1391,10 +1340,6 @@ function TrainingDock({
   const [resumeLoading, setResumeLoading] = useState(false);
   const [companyLoading, setCompanyLoading] = useState(false);
   const [companyDetailOpen, setCompanyDetailOpen] = useState(false);
-  const [resumeModalOpen, setResumeModalOpen] = useState(false);
-  const [resumePdfUrl, setResumePdfUrl] = useState<string | null>(() => {
-    try { return window.localStorage.getItem("resume-pdf-data"); } catch { return null; }
-  });
   const [analysisResult, setAnalysisResult] = useState<JdAnalysisResult | null>(null);
   const [jobInputFocused, setJobInputFocused] = useState(false);
   const selectedRole = options.roles?.find((role) => role.id === config.jobId);
@@ -1526,14 +1471,6 @@ function TrainingDock({
   async function parseResumeFile(file: File | null) {
     if (!file) return;
     setResumeLoading(true);
-    // 将 PDF 存为 base64，持久化到 localStorage，刷新不丢
-    const reader = new FileReader();
-    reader.onload = () => {
-      const dataUrl = reader.result as string;
-      setResumePdfUrl(dataUrl);
-      try { window.localStorage.setItem("resume-pdf-data", dataUrl); } catch {}
-    };
-    reader.readAsDataURL(file);
     try {
       const form = new FormData();
       form.append("file", file);
@@ -1684,14 +1621,13 @@ function TrainingDock({
           </>
         )}
         {config.resumeText && (
-          <button type="button" className="company-summary-strip" onClick={() => setResumeModalOpen(true)}>
-            <span><strong>个人简历</strong><small>{config.resumeText.length} 字</small></span>
-            <em>{config.resumeText.slice(0, 80)}{config.resumeText.length > 80 ? "…" : ""}</em>
-            <b>查看</b>
-          </button>
-        )}
-        {resumeModalOpen && config.resumeText && (
-          <ResumeModal text={config.resumeText} pdfUrl={resumePdfUrl} onClose={() => setResumeModalOpen(false)} />
+          <div className="resume-preview-card">
+            <div>
+              <strong>简历预览</strong>
+              <span>{config.resumeText.length} 字</span>
+            </div>
+            <p>{config.resumeText.slice(0, 420)}{config.resumeText.length > 420 ? "..." : ""}</p>
+          </div>
         )}
       </article>
 

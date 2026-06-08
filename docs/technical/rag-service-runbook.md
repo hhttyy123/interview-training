@@ -463,3 +463,52 @@ python -c "from dotenv import load_dotenv; load_dotenv('../.env'); from intervie
 -> 观察追问质量和延迟
 -> 再决定是否默认开启
 ```
+
+## 13. 正式预切 RAG 文档入库
+
+如果资料已经整理成 `## RAG Chunk 001`、`## RAG Chunk 002` 这种结构，系统会优先按人工 chunk 边界切分，并自动过滤 Markdown frontmatter、HTML 注释、入库命令等噪声。普通 `.md/.txt/.pdf/.docx` 仍按 `--chunk-size` 和 `--chunk-overlap` 做通用切分。
+
+当前这类预切文档建议放在：
+
+```text
+livekit-interview-spike/server/data/docs
+```
+
+清空旧 collection：
+
+```powershell
+cd D:\面试训练\livekit-interview-spike\server
+.\\.venv\\Scripts\\python.exe -c "from dotenv import load_dotenv; from pathlib import Path; import os; from qdrant_client import QdrantClient; load_dotenv(Path('..')/'.env'); client=QdrantClient(url=os.getenv('QDRANT_URL','http://localhost:6333')); collection=os.getenv('QDRANT_COLLECTION','interview_methodology'); exists=client.collection_exists(collection); print('exists_before', exists); client.delete_collection(collection) if exists else None; print('exists_after', client.collection_exists(collection))"
+```
+
+导入正式结构化面试文档：
+
+```powershell
+cd D:\面试训练\livekit-interview-spike\server
+.\\.venv\\Scripts\\python.exe scripts\\ingest_documents.py --path data\\docs --source-type methodology --license-note "internal methodology reference" --strategy-categories behavior,structured,technical,case --role-families general --competency-archetypes structured_interview,evidence_collection,rating_scale,followup_probe --evidence-categories behavior,skill,judgement,communication --chunk-size 900 --chunk-overlap 120 --batch-size 4
+```
+
+CPU 版 `bge-m3` 处理长 chunk 时建议 `--batch-size 4` 或更小，并在 `.env` 中保留：
+
+```env
+RAG_EMBEDDING_TIMEOUT_SECONDS=120
+```
+
+检查数量：
+
+```powershell
+cd D:\面试训练\livekit-interview-spike\server
+$env:PYTHONIOENCODING='utf-8'; .\\.venv\\Scripts\\python.exe -c "from dotenv import load_dotenv; from pathlib import Path; import os; from qdrant_client import QdrantClient; load_dotenv(Path('..')/'.env'); client=QdrantClient(url=os.getenv('QDRANT_URL','http://localhost:6333')); collection=os.getenv('QDRANT_COLLECTION','interview_methodology'); print(client.count(collection_name=collection, exact=True).count)"
+```
+
+直接检索：
+
+```powershell
+cd D:\面试训练\livekit-interview-spike\server
+$env:PYTHONIOENCODING='utf-8'; .\\.venv\\Scripts\\python.exe scripts\\query_methodology.py "候选人回答太笼统时如何设计结构化追问" --limit 3 --strategy-category structured --role-family general
+```
+
+```powershell
+cd D:\面试训练\livekit-interview-spike\server
+$env:PYTHONIOENCODING='utf-8'; .\\.venv\\Scripts\\python.exe scripts\\query_methodology.py "结构化面试评分量表应该怎么设计" --limit 3 --strategy-category structured --role-family general
+```

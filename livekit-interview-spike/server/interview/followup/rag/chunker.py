@@ -7,6 +7,9 @@ from interview.followup.rag.models import MethodologyChunk, MethodologySource
 
 
 _SENTENCE_BOUNDARY_RE = re.compile(r"(?<=[。！？.!?])\s+|\n{2,}")
+_RAG_CHUNK_HEADING_RE = re.compile(r"(?=^##\s+RAG\s+Chunk\s+\d+\b)", flags=re.MULTILINE | re.IGNORECASE)
+_PRESEGMENTED_MAX_CHARS = 3200
+_MIN_TRAILING_CHARS = 180
 
 
 def chunk_methodology_source(
@@ -41,12 +44,18 @@ def chunk_methodology_source(
 
 
 def _normalize_text(text: str) -> str:
-    return re.sub(r"\s+", " ", text).strip()
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
+    text = re.sub(r"[ \t]+", " ", text)
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    return text.strip()
 
 
 def _chunk_text(text: str, *, chunk_size: int, chunk_overlap: int) -> list[str]:
     if not text:
         return []
+    rag_chunks = _split_by_rag_chunk_headings(text)
+    if rag_chunks:
+        return rag_chunks
 
     sentences = [part.strip() for part in _SENTENCE_BOUNDARY_RE.split(text) if part.strip()]
     chunks: list[str] = []
@@ -72,7 +81,32 @@ def _chunk_text(text: str, *, chunk_size: int, chunk_overlap: int) -> list[str]:
 def _split_oversized_text(text: str, chunk_size: int) -> list[str]:
     if len(text) <= chunk_size:
         return [text]
-    return [text[index : index + chunk_size].strip() for index in range(0, len(text), chunk_size)]
+    chunks = [text[index : index + chunk_size].strip() for index in range(0, len(text), chunk_size)]
+    if len(chunks) > 1 and len(chunks[-1]) < _MIN_TRAILING_CHARS:
+        chunks[-2] = f"{chunks[-2]} {chunks[-1]}".strip()
+        chunks.pop()
+    return chunks
+
+
+def _split_by_rag_chunk_headings(text: str) -> list[str]:
+    sections = [section.strip() for section in _RAG_CHUNK_HEADING_RE.split(text) if section.strip()]
+    rag_sections = [section for section in sections if re.match(r"^##\s+RAG\s+Chunk\s+\d+\b", section, flags=re.IGNORECASE)]
+    if not rag_sections:
+        return []
+    chunks: list[str] = []
+    for section in rag_sections:
+        section = _strip_rag_section_noise(section)
+        if not section:
+            continue
+        chunks.extend(_split_oversized_text(re.sub(r"\s+", " ", section).strip(), _PRESEGMENTED_MAX_CHARS))
+    return chunks
+
+
+def _strip_rag_section_noise(section: str) -> str:
+    section = re.sub(r"<!--.*?-->", "", section, flags=re.DOTALL)
+    section = re.sub(r"^##\s+RAG\s+Chunk\s+\d+\s*", "", section, flags=re.IGNORECASE).strip()
+    section = re.sub(r"```(?:yaml|yml)\s+.*?chunk_id:.*?```\s*", "", section, flags=re.DOTALL | re.IGNORECASE)
+    return section
 
 
 def _tail(text: str, size: int) -> str:

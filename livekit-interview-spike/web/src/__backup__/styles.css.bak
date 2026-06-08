@@ -1184,17 +1184,6 @@ h1 {
   display: grid;
   gap: 0.35rem;
   padding: 0.65rem 0.75rem;
-  border: 1px solid rgba(33, 79, 64, 0.1);
-  border-radius: 0.85rem;
-  background: rgba(255, 255, 255, 0.52);
-  cursor: pointer;
-  transition: border-color 140ms ease, box-shadow 140ms ease, transform 140ms ease;
-}
-
-.resume-preview-card:hover {
-  border-color: rgba(33, 79, 64, 0.28);
-  box-shadow: 0 12px 32px rgba(33, 79, 64, 0.08);
-  transform: translateY(-1px);
 }
 
 .resume-preview-card div {

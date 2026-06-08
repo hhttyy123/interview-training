@@ -114,4 +114,5 @@ def embedding_provider_from_env() -> EmbeddingProvider:
         model=os.getenv("RAG_EMBEDDING_MODEL", "text-embedding-3-small"),
         base_url=os.getenv("RAG_EMBEDDING_BASE_URL", "https://api.openai.com/v1"),
         dimension=dimension,
+        timeout_seconds=float(os.getenv("RAG_EMBEDDING_TIMEOUT_SECONDS", "120")),
     )
