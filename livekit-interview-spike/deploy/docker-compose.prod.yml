@@ -1,0 +1,93 @@
+services:
+  nginx:
+    image: nginx:alpine
+    container_name: interview-nginx
+    profiles:
+      - edge
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/certs:/etc/nginx/ssl:ro
+    depends_on:
+      - ai-interview-web
+      - ai-interview-token-api
+      - ai-interview-livekit
+    restart: unless-stopped
+    networks:
+      - interview-network
+
+  ai-interview-web:
+    image: ${WEB_IMAGE}
+    container_name: ai-interview-web
+    restart: unless-stopped
+    networks:
+      - interview-network
+
+  ai-interview-token-api:
+    image: ${SERVER_IMAGE}
+    container_name: ai-interview-token-api
+    env_file:
+      - ./.env.production
+    command: ["python", "-m", "uvicorn", "token_server:app", "--host", "0.0.0.0", "--port", "8787"]
+    restart: unless-stopped
+    depends_on:
+      - ai-interview-livekit
+    networks:
+      - interview-network
+
+  ai-interview-agent:
+    image: ${SERVER_IMAGE}
+    container_name: ai-interview-agent
+    env_file:
+      - ./.env.production
+    command: ["python", "agent.py"]
+    restart: unless-stopped
+    depends_on:
+      - ai-interview-livekit
+      - ai-interview-token-api
+    networks:
+      - interview-network
+
+  ai-interview-livekit:
+    image: livekit/livekit-server:latest
+    container_name: ai-interview-livekit
+    command: ["--config", "/etc/livekit.yaml"]
+    ports:
+      - "7880:7880"
+      - "7881:7881"
+      - "7882:7882/udp"
+    volumes:
+      - ./livekit/livekit.yaml:/etc/livekit.yaml:ro
+    restart: unless-stopped
+    networks:
+      - interview-network
+
+  ai-interview-qdrant:
+    image: qdrant/qdrant:latest
+    container_name: ai-interview-qdrant
+    profiles:
+      - rag
+    volumes:
+      - ./data/qdrant:/qdrant/storage
+    restart: unless-stopped
+    networks:
+      - interview-network
+
+  ai-interview-embedding:
+    image: ghcr.io/huggingface/text-embeddings-inference:cpu-latest
+    container_name: ai-interview-embedding
+    profiles:
+      - rag
+    command: ["--model-id", "/models/bge-m3"]
+    volumes:
+      - ./models/bge-m3:/models/bge-m3:ro
+      - ./data/tei:/data
+    restart: unless-stopped
+    networks:
+      - interview-network
+
+networks:
+  interview-network:
+    driver: bridge

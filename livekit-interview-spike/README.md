@@ -18,7 +18,7 @@
 ```text
 livekit-interview-spike/
   bin/                    # 本地 LiveKit server，可本机运行
-  docs/                   # 项目技术债和后续规划
+  ../docs/                # 统一文档中心，包含项目技术债和后续规划
   scripts/start-dev.ps1   # Windows 本地四服务启动脚本
   server/
     agent.py              # LiveKit agent，处理音频、转写、轮次和 LLM
@@ -105,4 +105,4 @@ npm run dev
 - 回答结束判断仍是启发式逻辑，适合继续打磨，但还不是最终工业级方案。
 - 本地 `devkey/secret` 只能用于开发，不适合公网部署。
 
-后续优化见 [技术债文档](docs/technical-debt.md)。
+后续优化见 [技术债文档](../docs/technical/livekit-interview-spike-technical-debt.md)。

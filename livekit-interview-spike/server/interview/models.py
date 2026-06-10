@@ -151,6 +151,7 @@ class InterviewState:
     mode_id: str = "standard"
     competency_id: str = "requirement_analysis"
     strategy_id: str = "evidence_probe"
+    followup_mode: str = "fast"
     company_card: CompanyIntelligenceCard | None = None
     jd_text: str = ""
     resume_text: str = ""
@@ -168,6 +169,9 @@ class InterviewState:
     last_question: str = ""
     current_capability_id: str = "requirement_analysis"
     current_question_style_id: str = "open"
+    professional_question_traces: list[dict[str, object]] = field(default_factory=list)
+    recent_strategy_ids: list[str] = field(default_factory=list)
+    last_answer_gap: dict[str, object] = field(default_factory=dict)
 
     @property
     def candidate_turn_count(self) -> int:

@@ -17,6 +17,7 @@ from interview.configs import TRAINING_OPTIONS, VOICE_PROFILES, interview_option
 from interview.jd_analyzer import analyze_jd_with_llm
 from interview.resume_parser import extract_pdf_text, summarize_resume_text
 from local_providers import synthesize_edge_tts
+from runtime_flags import pro_followup_rag_enabled, set_pro_followup_rag_enabled
 
 
 load_dotenv(Path(__file__).resolve().parents[1] / ".env")
@@ -84,6 +85,10 @@ class JdAnalysisRequest(BaseModel):
     companyCard: dict[str, object] | None = None
 
 
+class DebugRagRequest(BaseModel):
+    enabled: bool
+
+
 def normalize_identity_name(raw_name: str) -> str:
     candidate = raw_name.strip()[:40] or "candidate"
     safe = "".join(ch for ch in candidate if ch.isalnum() or ch in ("-", "_"))
@@ -120,7 +125,15 @@ async def health() -> dict[str, object]:
             or os.getenv("TAVILY_API_KEY", "")
             or os.getenv("BOCHA_API_KEY", "")
         ),
+        "proFollowupRagEnabled": pro_followup_rag_enabled(),
     }
+
+
+@app.post("/debug/rag")
+async def update_debug_rag(request: DebugRagRequest) -> dict[str, object]:
+    set_pro_followup_rag_enabled(request.enabled)
+    logger.info("debug rag switch updated enabled=%s", request.enabled)
+    return {"proFollowupRagEnabled": pro_followup_rag_enabled()}
 
 
 @app.get("/training-options")

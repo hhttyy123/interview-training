@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import uuid
+import asyncio
 from collections.abc import Sequence
 from typing import Any
 
@@ -60,7 +61,8 @@ class QdrantVectorStore:
         query_vector: Sequence[float],
         query: RetrievalQuery,
     ) -> list[RetrievalResult]:
-        results = _search_points(
+        results = await asyncio.to_thread(
+            _search_points,
             client=self.client,
             collection_name=self.collection_name,
             query_vector=list(query_vector),

@@ -1,0 +1,21 @@
+catal.online, www.catal.online {
+    handle_path /ai-interview-studio-2606/* {
+        reverse_proxy ai-interview-web:80
+    }
+
+    handle_path /ai-interview-gateway-2606/* {
+        reverse_proxy ai-interview-token-api:8787 {
+            transport http {
+                read_timeout 300s
+            }
+        }
+    }
+
+    handle_path /ai-interview-realtime-2606/* {
+        reverse_proxy ai-interview-livekit:7880
+    }
+
+    handle {
+        respond "AI interview service is mounted under /ai-interview-studio-2606/" 404
+    }
+}

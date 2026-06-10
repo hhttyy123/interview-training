@@ -10,6 +10,7 @@ from livekit import api, rtc
 from interview import InterviewEvaluator, InterviewOrchestrator
 from interview.company_intel import company_card_from_payload
 from interview.configs import TRAINING_OPTIONS, role_by_id
+from interview.followup.followup_runtime import build_followup_runtime_prompt
 from interview.models import DynamicCompetency, DynamicEvidenceRequirement, DynamicJobModel, DynamicRubricDimension
 from local_providers import (
     ConversationMessage,
@@ -112,6 +113,7 @@ def training_config_from_event(event: dict[str, object]) -> dict[str, object]:
         "mode_id": str(config.get("modeId", "standard")),
         "competency_id": str(config.get("competencyId", default_competency)),
         "strategy_id": str(config.get("strategyId", "evidence_probe")),
+        "followup_mode": _followup_mode_from_config(config.get("followupMode")),
         "company_card": company_card_from_payload(config.get("companyCard"), fallback_role=role.label),
         "jd_text": str(config.get("jdText", "")),
         "resume_text": str(config.get("resumeText", "")),
@@ -132,6 +134,13 @@ def option_label(group: str, option_id: str) -> str:
         if item.get("id") == option_id:
             return str(item.get("label", option_id))
     return option_id
+
+
+def _followup_mode_from_config(raw: object) -> str:
+    value = str(raw or "fast").strip().lower()
+    if value in {"fast", "balanced", "professional"}:
+        return value
+    return "fast"
 
 
 def _question_style_weights_from_config(raw: object) -> dict[str, int]:
@@ -342,6 +351,7 @@ async def main() -> None:
                         "competencyLabel": option_label("competencies", training_config["competency_id"]),
                         "strategyId": training_config["strategy_id"],
                         "strategyLabel": option_label("strategies", training_config["strategy_id"]),
+                        "followupMode": training_config["followup_mode"],
                         "jobId": training_config["job_id"],
                         "jobLabel": training_config["job_label"],
                         "companyName": training_config["company_card"].company_name if training_config.get("company_card") else "",
@@ -508,16 +518,24 @@ async def stream_assistant_reply(
 ) -> None:
     assistant_text = ""
     await publish_json(room, {"type": "assistant.state", "state": "thinking"})
+    runtime_result = await build_followup_runtime_prompt(orchestrator=orchestrator, llm_provider=llm_provider)
     await publish_json(
         room,
         {
             "type": "question.plan",
             **orchestrator.build_question_trace(),
+            **runtime_result.planner_payload,
+        },
+    )
+    await publish_json(
+        room,
+        {
+            "type": "planner.trace",
+            **runtime_result.planner_payload,
         },
     )
     try:
-        system_prompt = orchestrator.build_followup_prompt()
-        async for chunk in llm_provider.stream_reply(messages, system_prompt=system_prompt):
+        async for chunk in llm_provider.stream_reply(messages, system_prompt=runtime_result.system_prompt):
             assistant_text += chunk
             await publish_json(room, {"type": "assistant.text.delta", "text": chunk})
     except Exception as error:
@@ -527,6 +545,13 @@ async def stream_assistant_reply(
     assistant_text = assistant_text.strip() or "你可以再补充一个更具体的项目细节吗？"
     messages.append(ConversationMessage("assistant", assistant_text))
     orchestrator.record_assistant_question(assistant_text)
+    if runtime_result.professional_result:
+        orchestrator.record_professional_followup_trace(
+            {
+                **runtime_result.planner_payload,
+                "assistantQuestion": assistant_text,
+            }
+        )
     await publish_json(room, {"type": "assistant.text.done", "text": assistant_text})
 
 

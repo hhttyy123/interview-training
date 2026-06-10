@@ -12,7 +12,7 @@ import "@livekit/components-styles";
 import { RoomEvent } from "livekit-client";
 import "./styles.css";
 
-const API_BASE = "http://127.0.0.1:8787";
+const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8787";
 const DEFAULT_ROOM = "interview-spike-room";
 
 async function readErrorDetail(response: Response): Promise<string> {
@@ -41,12 +41,14 @@ interface HealthPayload {
   edgeTtsInstalled: boolean;
   companySearchProvider?: string;
   companySearchConfigured?: boolean;
+  proFollowupRagEnabled?: boolean;
 }
 
 interface TrainingConfig {
   jobId: string;
   customJobTitle: string;
   modeId: string;
+  followupMode: "fast" | "balanced" | "professional";
   competencyId: string;
   strategyId: string;
   companyName: string;
@@ -175,8 +177,42 @@ interface ConversationEntry {
 }
 
 interface DebugEvent {
-  id: number;
+  id: string;
   text: string;
+}
+
+interface PlannerTrace {
+  id: string;
+  time: string;
+  mode?: string;
+  followupMode?: TrainingConfig["followupMode"];
+  gapTypes: string[];
+  strategyId?: string;
+  strategyTitle?: string;
+  target?: string;
+  timings?: { gapMs?: number; ragMs?: number; totalMs?: number };
+  ragEnabled?: boolean;
+  ragUsed?: boolean;
+  ragRawCount?: number;
+  ragFilteredCount?: number;
+  ragMinScore?: number;
+  ragTimeoutMs?: number;
+  ragEmbeddingMs?: number;
+  ragSearchMs?: number;
+  ragRerankMs?: number;
+  ragCacheHit?: boolean;
+  ragError?: string;
+  ragSources: string[];
+  ragMatches: Array<{ title?: string; score?: number; ordinal?: number; preview?: string }>;
+  ragQuery?: {
+    text?: string;
+    strategyCategory?: string;
+    roleFamily?: string;
+    competencyArchetypes?: string[];
+    evidenceCategories?: string[];
+    limit?: number;
+  };
+  error?: string;
 }
 
 interface InterviewReport {
@@ -258,6 +294,7 @@ const DEFAULT_TRAINING_CONFIG: TrainingConfig = {
   jobId: "product_manager",
   customJobTitle: "",
   modeId: "standard",
+  followupMode: "fast",
   competencyId: "requirement_analysis",
   strategyId: "evidence_probe",
   companyName: "",
@@ -278,6 +315,28 @@ const DEFAULT_TRAINING_CONFIG: TrainingConfig = {
     reflection: 10,
   },
 };
+
+const FOLLOWUP_MODES: Array<{
+  id: TrainingConfig["followupMode"];
+  label: string;
+  badge: string;
+}> = [
+  {
+    id: "fast",
+    label: "极速稳定",
+    badge: "推荐上线",
+  },
+  {
+    id: "balanced",
+    label: "平衡策略",
+    badge: "开发中",
+  },
+  {
+    id: "professional",
+    label: "专业增强",
+    badge: "效果待优化",
+  },
+];
 
 const FALLBACK_TRAINING_OPTIONS: TrainingOptions = {
   jobs: [{ id: "product_manager", label: "产品经理" }],
@@ -796,6 +855,7 @@ function SetupWizard({
 }) {
   const [companyLoading, setCompanyLoading] = useState(false);
   const [analysisLoading, setAnalysisLoading] = useState(false);
+  const [analysisProgress, setAnalysisProgress] = useSimulatedProgress(analysisLoading);
   const [resumeLoading, setResumeLoading] = useState(false);
   const [analysisError, setAnalysisError] = useState("");
   const [companyError, setCompanyError] = useState("");
@@ -920,6 +980,7 @@ function SetupWizard({
         throw new Error(detail || `HTTP ${response.status}`);
       }
       const payload = (await response.json()) as JdAnalysisResult;
+      setAnalysisProgress(96);
       onAnalysisResultChange(payload);
       patch({
         jobId: committedJobId,
@@ -940,7 +1001,9 @@ function SetupWizard({
     } catch (error) {
       setAnalysisError(error instanceof Error ? error.message : "岗位 JD 分析失败，请检查 DeepSeek 配置和网络。");
     } finally {
+      setAnalysisProgress(100);
       setAnalysisLoading(false);
+      window.setTimeout(() => setAnalysisProgress(0), 500);
     }
   }
 
@@ -1058,6 +1121,7 @@ function SetupWizard({
                 </div>
               )}
             </div>
+            {(analysisLoading || analysisProgress > 0) && <JdAnalysisProgress active={analysisLoading} progress={analysisLoading ? analysisProgress : 100} />}
             {analysisError && <p className="error-text">{analysisError}</p>}
             <p className="empty">{jobInputReady ? "点击下一步后，系统会分析该岗位的通用 JD 和训练能力模型。" : "请先输入或选择目标岗位，岗位为空时不会生成默认 JD。"}</p>
           </WizardCard>
@@ -1118,6 +1182,21 @@ function SetupWizard({
 
         {step === 3 && (
           <WizardCard title="选择面试风格">
+            <div className="followup-mode-grid" aria-label="追问运行模式">
+              {FOLLOWUP_MODES.map((mode) => (
+                <button
+                  type="button"
+                  key={mode.id}
+                  data-active={config.followupMode === mode.id}
+                  onClick={() => patch({ followupMode: mode.id })}
+                >
+                  <span className="mode-card-topline">
+                    <strong>{mode.label}</strong>
+                    <em>{mode.badge}</em>
+                  </span>
+                </button>
+              ))}
+            </div>
             <div className="choice-grid">
               {options.modes.map((mode) => (
                 <button type="button" key={mode.id} data-active={config.modeId === mode.id} onClick={() => applyModePreset(mode.id)}>
@@ -1187,6 +1266,7 @@ function SetupWizard({
               <MiniList title="公司" items={[config.companyCard?.companyName || config.companyName || "已跳过"]} />
               <MiniList title="岗位" items={[roleLabel()]} />
               <MiniList title="风格" items={[options.modes.find((item) => item.id === config.modeId)?.label || config.modeId]} />
+              <MiniList title="追问档位" items={[FOLLOWUP_MODES.find((item) => item.id === config.followupMode)?.label || config.followupMode]} />
               <MiniList title="声音" items={[voiceProfiles.find((item) => item.id === config.voiceProfileId)?.label || config.voiceProfileId]} />
               <MiniList title="简历" items={[config.resumeText ? "已上传并解析" : "未上传"]} />
               <MiniList title="配置" items={[analysisResult ? "已生成 JD 和雷达配置" : "请先完成 AI 岗位分析"]} />
@@ -1336,6 +1416,8 @@ function SourceNotesDetails({ items }: { items?: string[] }) {
 }
 
 function ReportPage({ record, onHome, onRestart }: { record: InterviewHistoryRecord; onHome: () => void; onRestart: () => void }) {
+  const [reportModalOpen, setReportModalOpen] = useState(false);
+
   return (
     <section className="report-page">
       <header className="home-hero">
@@ -1349,7 +1431,15 @@ function ReportPage({ record, onHome, onRestart }: { record: InterviewHistoryRec
           <button type="button" className="ghost-button" onClick={onRestart}>再练一轮</button>
         </div>
       </header>
-      <InterviewReportPanel report={record.report} />
+      <InterviewReportSummaryCard report={record.report} onOpen={() => setReportModalOpen(true)} />
+      {reportModalOpen && (
+        <InterviewReportModal
+          report={record.report}
+          title={`${record.companyName} · ${record.jobLabel}`}
+          subtitle={record.createdAt}
+          onClose={() => setReportModalOpen(false)}
+        />
+      )}
       <details className="home-card">
         <summary>完整对话记录</summary>
         <div className="history-list transcript-history">
@@ -2075,16 +2165,30 @@ function InterviewRoom({
   const [assistantText, setAssistantText] = useState("");
   const [assistantState, setAssistantState] = useState("已进入房间，点击开始会话");
   const [debugEvents, setDebugEvents] = useState<DebugEvent[]>([]);
+  const [plannerTraces, setPlannerTraces] = useState<PlannerTrace[]>([]);
+  const [reportModalOpen, setReportModalOpen] = useState(false);
   const [conversation, setConversation] = useState<ConversationEntry[]>([]);
   const [livekitConnected, setLivekitConnected] = useState(false);
   const [phase, setPhaseState] = useState<SessionPhase>("idle");
   const [showDebug, setShowDebug] = useState(false);
   const [lastVoiceLevel, setLastVoiceLevel] = useState(0);
   const [interviewReport, setInterviewReport] = useState<InterviewReport | null>(null);
+  const [ragEnabled, setRagEnabled] = useState(Boolean(health?.proFollowupRagEnabled));
+  const [ragSwitching, setRagSwitching] = useState(false);
+  const activeJobLabel =
+    trainingConfig.customJobTitle ||
+    trainingOptions.jobs.find((item) => item.id === trainingConfig.jobId)?.label ||
+    "目标岗位";
 
   useEffect(() => {
     trainingConfigRef.current = trainingConfig;
   }, [trainingConfig]);
+
+  useEffect(() => {
+    if (typeof health?.proFollowupRagEnabled === "boolean") {
+      setRagEnabled(health.proFollowupRagEnabled);
+    }
+  }, [health?.proFollowupRagEnabled]);
 
   useEffect(() => {
     interviewReportRef.current = interviewReport;
@@ -2110,15 +2214,97 @@ function InterviewRoom({
 
   function addDebugEvent(event: string) {
     debugEventSeqRef.current += 1;
+    const id = `${Date.now()}-${debugEventSeqRef.current}`;
     setDebugEvents((current) =>
       [
         {
-          id: debugEventSeqRef.current,
+          id,
           text: `${new Date().toLocaleTimeString()} ${event}`,
         },
         ...current,
-      ].slice(0, 12),
+      ].slice(0, 80),
     );
+  }
+
+  function addPlannerTrace(event: {
+    plannerMode?: string;
+    followupMode?: TrainingConfig["followupMode"];
+    answerGapTypes?: string[];
+    bestNextProbeTarget?: string;
+    selectedStrategyId?: string;
+    selectedStrategyTitle?: string;
+    plannerTimings?: PlannerTrace["timings"];
+    ragEnabled?: boolean;
+    ragUsed?: boolean;
+    ragRawCount?: number;
+    ragFilteredCount?: number;
+    ragMinScore?: number;
+    ragTimeoutMs?: number;
+    ragEmbeddingMs?: number;
+    ragSearchMs?: number;
+    ragRerankMs?: number;
+    ragCacheHit?: boolean;
+    ragError?: string;
+    ragSourceTitles?: string[];
+    ragMatches?: PlannerTrace["ragMatches"];
+    ragQuery?: PlannerTrace["ragQuery"];
+    plannerError?: string;
+  }) {
+    debugEventSeqRef.current += 1;
+    const time = new Date().toLocaleTimeString();
+    const id = `planner-${Date.now()}-${debugEventSeqRef.current}`;
+    setPlannerTraces((current) =>
+      [
+        {
+          id,
+          time,
+          mode: event.plannerMode,
+          followupMode: event.followupMode,
+          gapTypes: event.answerGapTypes || [],
+          strategyId: event.selectedStrategyId,
+          strategyTitle: event.selectedStrategyTitle,
+          target: event.bestNextProbeTarget,
+          timings: event.plannerTimings,
+          ragEnabled: event.ragEnabled,
+          ragUsed: event.ragUsed,
+          ragRawCount: event.ragRawCount,
+          ragFilteredCount: event.ragFilteredCount,
+          ragMinScore: event.ragMinScore,
+          ragTimeoutMs: event.ragTimeoutMs,
+          ragEmbeddingMs: event.ragEmbeddingMs,
+          ragSearchMs: event.ragSearchMs,
+          ragRerankMs: event.ragRerankMs,
+          ragCacheHit: event.ragCacheHit,
+          ragError: event.ragError,
+          ragSources: event.ragSourceTitles || [],
+          ragMatches: event.ragMatches || [],
+          ragQuery: event.ragQuery,
+          error: event.plannerError,
+        },
+        ...current,
+      ].slice(0, 20),
+    );
+  }
+
+  async function toggleRagEnabled() {
+    const nextEnabled = !ragEnabled;
+    setRagSwitching(true);
+    try {
+      const response = await fetch(`${API_BASE}/debug/rag`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled: nextEnabled }),
+      });
+      if (!response.ok) throw new Error(await readErrorDetail(response));
+      const payload = (await response.json()) as { proFollowupRagEnabled?: boolean };
+      const enabled = Boolean(payload.proFollowupRagEnabled);
+      setRagEnabled(enabled);
+      addDebugEvent(`RAG 总开关已${enabled ? "开启" : "关闭"}，下一轮追问生效`);
+    } catch (error) {
+      addDebugEvent(`RAG 总开关切换失败：${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      setRagSwitching(false);
+    }
   }
 
   function addConversationEntry(role: ConversationEntry["role"], text: string) {
@@ -2278,6 +2464,39 @@ function InterviewRoom({
         coverageRatio?: number;
         missingEvidence?: string[];
         reason?: string;
+        plannerMode?: string;
+        followupMode?: TrainingConfig["followupMode"];
+        professionalEnabled?: boolean;
+        answerGapTypes?: string[];
+        answerGapConfidence?: number;
+        answerGapFallback?: boolean;
+        answerQualitySummary?: string;
+        bestNextProbeTarget?: string;
+        selectedStrategyId?: string;
+        selectedStrategyTitle?: string;
+        ragEnabled?: boolean;
+        ragUsed?: boolean;
+        ragRawCount?: number;
+        ragFilteredCount?: number;
+        ragMinScore?: number;
+        ragTimeoutMs?: number;
+        ragEmbeddingMs?: number;
+        ragSearchMs?: number;
+        ragRerankMs?: number;
+        ragCacheHit?: boolean;
+        ragError?: string;
+        ragSourceTitles?: string[];
+        plannerTimings?: { gapMs?: number; ragMs?: number; totalMs?: number };
+        ragQuery?: {
+          text?: string;
+          strategyCategory?: string;
+          roleFamily?: string;
+          competencyArchetypes?: string[];
+          evidenceCategories?: string[];
+          limit?: number;
+        };
+        ragMatches?: Array<{ title?: string; score?: number; ordinal?: number; sourceId?: string; preview?: string }>;
+        plannerError?: string;
         rms?: number;
         report?: InterviewReport;
       };
@@ -2297,7 +2516,7 @@ function InterviewRoom({
         addDebugEvent(
           `配置已应用：${event.modeLabel || event.modeId} / ${event.competencyLabel || event.competencyId} / ${
             event.strategyLabel || event.strategyId
-          } / ${event.voiceProfileId || "默认声音"} / ${event.interviewerTone || "默认语气"}`,
+          } / 追问档位=${FOLLOWUP_MODES.find((item) => item.id === event.followupMode)?.label || event.followupMode || "极速稳定"} / ${event.voiceProfileId || "默认声音"} / ${event.interviewerTone || "默认语气"}`,
         );
       }
       if (event.type === "question.plan") {
@@ -2308,6 +2527,54 @@ function InterviewRoom({
             event.missingEvidence?.slice(0, 2).join("、") || "暂无"
           } / ${event.traceReason || ""}`,
         );
+        if (event.plannerMode) {
+          addDebugEvent(
+            `专业追问：mode=${event.plannerMode} / followup=${event.followupMode || "-"} / gap=${event.answerGapTypes?.join(",") || "none"} / strategy=${
+              event.selectedStrategyId || "none"
+            } / ragEnabled=${event.ragEnabled === false ? "off" : "on"} / rag=${
+              event.ragUsed ? event.ragSourceTitles?.slice(0, 2).join("、") || "命中" : "未使用"
+            } / raw=${
+              event.ragRawCount ?? "-"
+            } / filtered=${event.ragFilteredCount ?? "-"} / cache=${event.ragCacheHit ? "hit" : "miss"}${
+              event.ragError ? ` / ragError=${event.ragError}` : event.plannerError ? ` / error=${event.plannerError}` : ""
+            }`,
+          );
+        }
+      }
+      if (event.type === "planner.trace") {
+        addPlannerTrace(event);
+        const timings = event.plannerTimings;
+        addDebugEvent(
+          `Planner耗时：total=${timings?.totalMs ?? "-"}ms / gap=${timings?.gapMs ?? "-"}ms / rag=${
+            timings?.ragMs ?? "-"
+          }ms / embed=${event.ragEmbeddingMs ?? "-"}ms / search=${event.ragSearchMs ?? "-"}ms / mode=${event.plannerMode || "unknown"}`,
+        );
+        addDebugEvent(
+          `Planner决策：gap=${event.answerGapTypes?.join(",") || "none"} / strategy=${
+            event.selectedStrategyId || "none"
+          } / target=${event.bestNextProbeTarget || "无"}`,
+        );
+        if (event.ragQuery) {
+          addDebugEvent(
+            `RAG查询：category=${event.ragQuery.strategyCategory || "none"} / evidence=${
+              event.ragQuery.evidenceCategories?.join(",") || "none"
+            } / limit=${event.ragQuery.limit ?? "-"} / minScore=${event.ragMinScore ?? "-"} / timeout=${event.ragTimeoutMs ?? "-"}ms`,
+          );
+        }
+        if (event.ragMatches?.length) {
+          addDebugEvent(
+            `RAG命中：${event.ragMatches
+              .slice(0, 3)
+              .map((item) => `${item.title || "unknown"}(${item.score ?? 0})`)
+              .join(" / ")}`,
+          );
+        } else if (event.professionalEnabled) {
+          addDebugEvent(
+            `RAG命中：无 / raw=${event.ragRawCount ?? "-"} / filtered=${event.ragFilteredCount ?? "-"}${
+              event.ragError ? ` / ${event.ragError}` : event.plannerError ? ` / ${event.plannerError}` : ""
+            }`,
+          );
+        }
       }
       if (event.type === "session.ended") {
         setPhase("ended");
@@ -2484,7 +2751,7 @@ function InterviewRoom({
             </div>
           )}
 
-          {interviewReport && <InterviewReportPanel report={interviewReport} compact />}
+          {interviewReport && <InterviewReportSummaryCard report={interviewReport} onOpen={() => setReportModalOpen(true)} compact />}
 
           <div className="call-controls">
             <button
@@ -2577,7 +2844,78 @@ function InterviewRoom({
             )}
           </section>
 
-          {interviewReport && <InterviewReportPanel report={interviewReport} />}
+          {interviewReport && <InterviewReportSummaryCard report={interviewReport} onOpen={() => setReportModalOpen(true)} />}
+
+          <details className="debug-card" open>
+            <summary>Planner / RAG 追问调试（保留最近 {plannerTraces.length} 条）</summary>
+            <div className="debug-toolbar">
+              <div>
+                <strong>RAG 总开关</strong>
+                <span>{ragEnabled ? "已开启：追问会检索方法论库" : "已关闭：追问只使用策略卡和 answer_gap"}</span>
+              </div>
+              <button type="button" className={ragEnabled ? "secondary-button" : ""} disabled={ragSwitching} onClick={toggleRagEnabled}>
+                {ragSwitching ? "切换中" : ragEnabled ? "关闭 RAG" : "开启 RAG"}
+              </button>
+            </div>
+            {plannerTraces.length === 0 ? (
+              <p>暂无 planner trace。完成一轮回答后，这里会显示 answer_gap、策略卡、RAG 查询和命中资料。</p>
+            ) : (
+              <div className="planner-trace-list">
+                {plannerTraces.map((trace) => (
+                  <article key={trace.id} className="planner-trace-item">
+                    <div className="planner-trace-head">
+                      <strong>{trace.time}</strong>
+                      <span>{trace.mode || "unknown"}</span>
+                      <span>followup={trace.followupMode || "-"}</span>
+                      <span>{trace.timings?.totalMs ?? "-"}ms</span>
+                    </div>
+                    <p>
+                      <b>gap</b>：{trace.gapTypes.join(", ") || "none"}
+                    </p>
+                    <p>
+                      <b>strategy</b>：{trace.strategyId || "none"}
+                      {trace.strategyTitle ? ` / ${trace.strategyTitle}` : ""}
+                    </p>
+                    <p>
+                      <b>target</b>：{trace.target || "无"}
+                    </p>
+                    <p>
+                      <b>timing</b>：gap={trace.timings?.gapMs ?? "-"}ms / rag={trace.timings?.ragMs ?? "-"}ms / total=
+                      {trace.timings?.totalMs ?? "-"}ms
+                    </p>
+                    <p>
+                      <b>rag stats</b>：raw={trace.ragRawCount ?? "-"} / filtered={trace.ragFilteredCount ?? "-"} / minScore=
+                      {trace.ragMinScore ?? "-"} / timeout={trace.ragTimeoutMs ?? "-"}ms / enabled=
+                      {trace.ragEnabled === false ? "off" : "on"} / cache={trace.ragCacheHit ? "hit" : "miss"}
+                    </p>
+                    <p>
+                      <b>rag split</b>：embedding={trace.ragEmbeddingMs ?? "-"}ms / search={trace.ragSearchMs ?? "-"}ms / rerank=
+                      {trace.ragRerankMs ?? "-"}ms
+                    </p>
+                    <p>
+                      <b>rag query</b>：category={trace.ragQuery?.strategyCategory || "none"} / evidence=
+                      {trace.ragQuery?.evidenceCategories?.join(",") || "none"} / limit={trace.ragQuery?.limit ?? "-"}
+                    </p>
+                    <p>
+                      <b>rag used</b>：{trace.ragUsed ? "是" : "否"}
+                      {trace.ragSources.length ? ` / ${trace.ragSources.join(" / ")}` : ""}
+                    </p>
+                    {trace.ragMatches.length ? (
+                      <ul className="planner-rag-matches">
+                        {trace.ragMatches.slice(0, 4).map((match, index) => (
+                          <li key={`${trace.id}-match-${index}`}>
+                            {match.title || "unknown"} score={match.score ?? "-"} ordinal={match.ordinal ?? "-"}
+                          </li>
+                        ))}
+                      </ul>
+                    ) : null}
+                    {trace.ragError ? <p className="planner-trace-error">rag error：{trace.ragError}</p> : null}
+                    {trace.error ? <p className="planner-trace-error">error：{trace.error}</p> : null}
+                  </article>
+                ))}
+              </div>
+            )}
+          </details>
 
           <details className="debug-card" open>
             <summary>调试事件</summary>
@@ -2585,13 +2923,22 @@ function InterviewRoom({
               <p>暂无事件。如果一直为空，说明前端还没连上 LiveKit 或没有收到 agent 数据。</p>
             ) : (
               <ul>
-                {debugEvents.map((event) => (
-                  <li key={event.id}>{event.text}</li>
+                {debugEvents.map((event, index) => (
+                  <li key={`${event.id}-${index}`}>{event.text}</li>
                 ))}
               </ul>
             )}
           </details>
         </section>
+      )}
+
+      {interviewReport && reportModalOpen && (
+        <InterviewReportModal
+          report={interviewReport}
+          title={`${trainingConfig.companyCard?.companyName || trainingConfig.companyName || "模拟面试"} · ${activeJobLabel}`}
+          subtitle={`回答 ${interviewReport.turn_count ?? 0} 轮 · 证据覆盖 ${Math.round((interviewReport.coverage_ratio ?? 0) * 100)}%`}
+          onClose={() => setReportModalOpen(false)}
+        />
       )}
 
       <footer className={showDebug ? "controls" : "controls compact-controls"}>
@@ -2609,6 +2956,12 @@ const ABILITY_LABELS: Record<string, string> = {
   expression_clarity: "表达清晰",
 };
 
+type AbilityRadarEntry = {
+  id: string;
+  label: string;
+  score: number;
+};
+
 function reportQualityText(report: InterviewReport): string {
   if (report.report_quality === "insufficient_sample") return "样本不足，暂不生成正式评分";
   if (report.report_quality === "evaluation_unavailable") return "评分模型不可用";
@@ -2620,8 +2973,145 @@ function scoreText(score: number | null | undefined): string {
   return typeof score === "number" ? `${score}/10` : "暂不评分";
 }
 
+function useSimulatedProgress(active: boolean) {
+  const [progress, setProgress] = useState(0);
+  useEffect(() => {
+    if (!active) {
+      return;
+    }
+    setProgress(8);
+    const startedAt = Date.now();
+    const interval = window.setInterval(() => {
+      const elapsed = Date.now() - startedAt;
+      const next = Math.min(88, 8 + Math.round(elapsed / 260));
+      setProgress((current) => Math.max(current, next));
+    }, 280);
+    return () => window.clearInterval(interval);
+  }, [active]);
+  return [progress, setProgress] as const;
+}
+
+function JdAnalysisProgress({ active, progress }: { active: boolean; progress: number }) {
+  const safeProgress = Math.max(0, Math.min(100, progress));
+  return (
+    <div className="jd-progress-card compact-jd-progress" aria-live="polite" data-active={active} aria-label="岗位 JD 分析进度">
+      <div className="jd-progress-track">
+        <i style={{ width: `${safeProgress}%` }} />
+      </div>
+    </div>
+  );
+}
+
+function InterviewReportSummaryCard({
+  report,
+  onOpen,
+  compact = false,
+}: {
+  report: InterviewReport;
+  onOpen: () => void;
+  compact?: boolean;
+}) {
+  const scoredDimensions = (report.dimensions ?? []).filter((item) => typeof item.score === "number");
+  const averageScore =
+    scoredDimensions.length > 0
+      ? Math.round((scoredDimensions.reduce((sum, item) => sum + Number(item.score), 0) / scoredDimensions.length) * 10) / 10
+      : null;
+  const strongest = scoredDimensions.reduce<(typeof scoredDimensions)[number] | null>(
+    (best, item) => (best && Number(best.score) >= Number(item.score) ? best : item),
+    null,
+  );
+  const weakest = scoredDimensions.reduce<(typeof scoredDimensions)[number] | null>(
+    (worst, item) => (worst && Number(worst.score) <= Number(item.score) ? worst : item),
+    null,
+  );
+
+  return (
+    <article className={compact ? "report-summary-strip compact-report-summary-strip" : "report-summary-strip"}>
+      <div className="report-summary-copy">
+        <p className="label">面试报告</p>
+        <h3>{reportQualityText(report)}</h3>
+        <p>{report.summary || "报告已生成，点击查看完整岗位能力雷达图、评分维度和训练计划。"}</p>
+        <div className="report-summary-meta">
+          <span>平均 {averageScore ? `${averageScore}/10` : "暂不评分"}</span>
+          <span>岗位匹配 {scoreText(report.role_fit?.score)}</span>
+          <span>覆盖 {Math.round((report.coverage_ratio ?? 0) * 100)}%</span>
+        </div>
+      </div>
+      {!compact && (
+        <div className="report-summary-insights">
+          <span>优势：{strongest?.name || "等待更多样本"}</span>
+          <span>优先补强：{weakest?.name || report.main_weakness || "等待更多样本"}</span>
+        </div>
+      )}
+      <button type="button" onClick={onOpen}>查看完整报告</button>
+    </article>
+  );
+}
+
+function InterviewReportModal({
+  report,
+  title,
+  subtitle,
+  onClose,
+}: {
+  report: InterviewReport;
+  title: string;
+  subtitle?: string;
+  onClose: () => void;
+}) {
+  useEffect(() => {
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") onClose();
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [onClose]);
+
+  return (
+    <div className="company-modal-backdrop report-modal-backdrop" role="presentation" onMouseDown={onClose}>
+      <section className="company-modal report-modal" role="dialog" aria-modal="true" aria-label="完整面试报告" onMouseDown={(event) => event.stopPropagation()}>
+        <header>
+          <div>
+            <span>INTERVIEW REPORT</span>
+            <h2>{title}</h2>
+            <p>{subtitle || "完整评价报告包含岗位能力雷达、分项证据、岗位匹配和后续训练计划。"}</p>
+          </div>
+          <button type="button" aria-label="关闭面试报告" onClick={onClose}>×</button>
+        </header>
+        <div className="company-modal-meta">
+          <span>{reportQualityText(report)}</span>
+          <span>回答 {report.turn_count ?? 0} 轮</span>
+          <span>证据覆盖 {Math.round((report.coverage_ratio ?? 0) * 100)}%</span>
+        </div>
+        <div className="report-modal-body">
+          <InterviewReportPanel report={report} />
+        </div>
+      </section>
+    </div>
+  );
+}
+
 function InterviewReportPanel({ report, compact = false }: { report: InterviewReport; compact?: boolean }) {
-  const abilityEntries = Object.entries(report.ability_model ?? {});
+  const dimensionAbilityEntries: AbilityRadarEntry[] = (report.dimensions ?? [])
+    .filter((item) => typeof item.score === "number")
+    .map((item) => ({
+      id: item.id || item.name,
+      label: item.name || ABILITY_LABELS[item.id] || item.id,
+      score: Math.max(1, Math.min(10, Number(item.score))),
+    }));
+  const abilityEntries: AbilityRadarEntry[] =
+    dimensionAbilityEntries.length > 0
+      ? dimensionAbilityEntries
+      : Object.entries(report.ability_model ?? {}).map(([id, score]) => ({
+          id,
+          label: ABILITY_LABELS[id] ?? id,
+          score: Math.max(1, Math.min(10, Number(score))),
+        }));
   const tasks = report.training_plan?.tasks ?? [];
 
   return (
@@ -2677,9 +3167,9 @@ function InterviewReportPanel({ report, compact = false }: { report: InterviewRe
         <>
           <AbilityRadar entries={abilityEntries} />
           <div className="ability-bars" aria-label="能力模型">
-            {abilityEntries.map(([id, score]) => (
-              <div key={id} className="ability-row">
-                <span>{ABILITY_LABELS[id] ?? id}</span>
+            {abilityEntries.map(({ id, label, score }, index) => (
+              <div key={`${id}-${index}`} className="ability-row">
+                <span>{label}</span>
                 <div className="ability-track">
                   <i style={{ width: `${Math.max(8, Math.min(100, (score / 10) * 100))}%` }} />
                 </div>
@@ -2774,12 +3264,23 @@ function InterviewReportPanel({ report, compact = false }: { report: InterviewRe
   );
 }
 
-function AbilityRadar({ entries }: { entries: Array<[string, number]> }) {
+function AbilityRadar({ entries }: { entries: AbilityRadarEntry[] }) {
   const size = 260;
   const center = size / 2;
   const radius = 86;
   const normalizedEntries = entries.slice(0, 8);
-  const points = normalizedEntries.map(([, score], index) => {
+  if (normalizedEntries.length < 3) {
+    return (
+      <div className="radar-card" aria-label="岗位能力雷达图">
+        <div className="radar-title">
+          <strong>岗位能力雷达图</strong>
+          <span>10 分制</span>
+        </div>
+        <p className="report-summary">当前可评分维度不足，雷达图暂不绘制；下方能力条仍会展示已有岗位维度评分。</p>
+      </div>
+    );
+  }
+  const points = normalizedEntries.map(({ score }, index) => {
     const angle = -Math.PI / 2 + (index / normalizedEntries.length) * Math.PI * 2;
     const value = Math.max(0, Math.min(10, Number(score))) / 10;
     return {
@@ -2812,22 +3313,22 @@ function AbilityRadar({ entries }: { entries: Array<[string, number]> }) {
           return <polygon key={level} points={gridPoints} className="radar-grid" />;
         })}
         {points.map((point, index) => (
-          <line key={`${normalizedEntries[index][0]}-axis`} x1={center} y1={center} x2={point.axisX} y2={point.axisY} className="radar-axis" />
+          <line key={`${normalizedEntries[index].id}-${index}-axis`} x1={center} y1={center} x2={point.axisX} y2={point.axisY} className="radar-axis" />
         ))}
         <polygon points={polygon} className="radar-area" />
         {points.map((point, index) => (
-          <circle key={`${normalizedEntries[index][0]}-dot`} cx={point.x} cy={point.y} r="4" className="radar-dot" />
+          <circle key={`${normalizedEntries[index].id}-${index}-dot`} cx={point.x} cy={point.y} r="4" className="radar-dot" />
         ))}
         {points.map((point, index) => (
           <text
-            key={`${normalizedEntries[index][0]}-label`}
+            key={`${normalizedEntries[index].id}-${index}-label`}
             x={point.labelX}
             y={point.labelY}
             textAnchor={Math.cos(point.angle) > 0.2 ? "start" : Math.cos(point.angle) < -0.2 ? "end" : "middle"}
             dominantBaseline="middle"
             className="radar-label"
           >
-            {ABILITY_LABELS[normalizedEntries[index][0]] ?? normalizedEntries[index][0]}
+            {normalizedEntries[index].label}
           </text>
         ))}
       </svg>

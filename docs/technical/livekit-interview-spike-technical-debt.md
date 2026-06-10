@@ -45,4 +45,4 @@
 5. 当前内置评价器先消费 `EvaluationRequest`，后续外部评价 Agent 也消费同一契约。
 6. 评价结果通过 adapter 转成当前前端兼容的报告结构。
 
-这条主线的详细方案见 `../../docs/technical/project-optimization-roadmap.md` 和 `../../docs/technical/evaluation-agent-contract.md`。
+这条主线的详细方案见 `project-optimization-roadmap.md` 和 `evaluation-agent-contract.md`。

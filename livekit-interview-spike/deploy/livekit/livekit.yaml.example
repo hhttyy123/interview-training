@@ -1,0 +1,15 @@
+port: 7880
+bind_addresses:
+  - ""
+
+rtc:
+  tcp_port: 7881
+  port_range_start: 7882
+  port_range_end: 7882
+  use_external_ip: true
+
+keys:
+  replace_with_real_livekit_key: replace_with_real_livekit_secret
+
+logging:
+  level: info

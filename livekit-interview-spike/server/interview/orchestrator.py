@@ -68,6 +68,7 @@ class InterviewOrchestrator:
         mode_id: str = "standard",
         competency_id: str = "requirement_analysis",
         strategy_id: str = "evidence_probe",
+        followup_mode: str = "fast",
         company_card: CompanyIntelligenceCard | None = None,
         jd_text: str = "",
         resume_text: str = "",
@@ -92,6 +93,7 @@ class InterviewOrchestrator:
                 mode_id=mode_id,
                 competency_id=dynamic_model.focus_competency_id or (first_comp.id if first_comp else "comp_0"),
                 strategy_id=strategy_id,
+                followup_mode=followup_mode,
                 company_card=company_card,
                 jd_text=jd_text.strip(),
                 resume_text=resume_text.strip(),
@@ -121,6 +123,7 @@ class InterviewOrchestrator:
                 mode_id=mode_id,
                 competency_id=competency,
                 strategy_id=strategy_id,
+                followup_mode=followup_mode,
                 company_card=company_card,
                 jd_text=jd_text.strip(),
                 resume_text=resume_text.strip(),
@@ -165,10 +168,8 @@ class InterviewOrchestrator:
         return covered / total
 
     def build_question_trace(self) -> dict[str, object]:
-        current_track = self._track_by_id(self.state.current_capability_id) or self._active_tracks()[0]
-        missing_requirements = [
-            item.name for item in current_track.requirements if not self._requirement_present(item.keywords)
-        ]
+        current_track = self.current_track()
+        missing_requirements = list(self.current_missing_evidence())
         style_id = self.state.current_question_style_id or "open"
         competency_weight = (self.state.competency_weights or {}).get(current_track.id, 0)
         style_weight = (self.state.question_style_weights or {}).get(style_id, 0)
@@ -185,6 +186,41 @@ class InterviewOrchestrator:
             "traceReason": self._question_trace_reason(current_track, style_id, missing_requirements),
             "turnIndex": self.state.candidate_turn_count + 1,
         }
+
+    def current_track(self) -> CapabilityTrack:
+        return self._track_by_id(self.state.current_capability_id) or self._active_tracks()[0]
+
+    def current_missing_evidence(self) -> tuple[str, ...]:
+        current_track = self.current_track()
+        return tuple(
+            item.name for item in current_track.requirements if not self._requirement_present(item.keywords)
+        )
+
+    def current_interview_style_id(self) -> str:
+        if self.state.interviewer_tone == "pressure" or self.state.mode_id == "pressure":
+            return "pressure"
+        if self.state.interviewer_tone == "formal":
+            return "formal"
+        if self.state.interviewer_tone in {"relaxed", "encouraging"}:
+            return "supportive"
+        if self.state.candidate_turn_count >= max(8, self.state.max_candidate_turns - 3):
+            return "final_round"
+        return "standard"
+
+    def record_professional_followup_trace(self, payload: dict[str, object]) -> None:
+        self.state.professional_question_traces.append(payload)
+        strategy_id = str(payload.get("selectedStrategyId", "")).strip()
+        if strategy_id:
+            self.state.recent_strategy_ids.append(strategy_id)
+            self.state.recent_strategy_ids = self.state.recent_strategy_ids[-6:]
+        gap_types = payload.get("answerGapTypes")
+        if isinstance(gap_types, list):
+            self.state.last_answer_gap = {
+                "gapTypes": gap_types,
+                "confidence": payload.get("answerGapConfidence", 0),
+                "summary": payload.get("answerQualitySummary", ""),
+                "bestNextProbeTarget": payload.get("bestNextProbeTarget", ""),
+            }
 
     def build_followup_prompt(self) -> str:
         current_track = self._track_by_id(self.state.current_capability_id) or self._active_tracks()[0]
@@ -399,6 +435,12 @@ class InterviewOrchestrator:
         for index, turn in enumerate(self.state.turns, start=1):
             lines.append(
                 f"第{index}轮：能力={self._track_name(turn.capability_id)}；提问方式={self._question_style_name(turn.question_style_id)}；问题={turn.question}"
+            )
+        for trace in self.state.professional_question_traces:
+            gap = ", ".join(str(item) for item in trace.get("answerGapTypes", []) or [])
+            sources = ", ".join(str(item) for item in trace.get("ragSourceTitles", []) or [])
+            lines.append(
+                f"专业追问计划：策略={trace.get('selectedStrategyId', '')}；缺口={gap or '无'}；RAG={sources or '未命中'}"
             )
         return "\n".join(lines) or "暂无追问轨迹。"
 

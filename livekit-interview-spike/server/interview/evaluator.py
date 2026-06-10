@@ -61,9 +61,33 @@ class InterviewEvaluator:
         report.setdefault("evidence_snapshot", orchestrator.evidence_snapshot_text())
         report.setdefault("turn_count", orchestrator.state.candidate_turn_count)
         report.setdefault("coverage_ratio", round(orchestrator.coverage_ratio(), 2))
+        self._normalize_dimensions_to_rubric(report, orchestrator)
         self._normalize_dimension_tone(report)
-        report.setdefault("ability_model", self._ability_model_from_dimensions(report.get("dimensions", []), orchestrator))
+        report["ability_model"] = self._ability_model_from_dimensions(report.get("dimensions", []), orchestrator)
         return report
+
+    def _rubric_dimensions(self, orchestrator: InterviewOrchestrator) -> Any:
+        if orchestrator.has_dynamic_model and orchestrator._model:
+            return orchestrator._model.rubric_dimensions
+        return RUBRIC_DIMENSIONS
+
+    def _normalize_dimensions_to_rubric(self, report: dict[str, Any], orchestrator: InterviewOrchestrator) -> None:
+        dimensions = report.get("dimensions")
+        if not isinstance(dimensions, list):
+            return
+        rubric_by_id = {item.id: item for item in self._rubric_dimensions(orchestrator)}
+        for item in dimensions:
+            if not isinstance(item, dict):
+                continue
+            dimension_id = str(item.get("id", "")).strip()
+            rubric = rubric_by_id.get(dimension_id)
+            if not rubric:
+                continue
+            item["id"] = rubric.id
+            item["name"] = rubric.name
+            score = item.get("score")
+            if isinstance(score, int):
+                item["score"] = max(SCORE_MIN, min(SCORE_MAX, score))
 
     def _normalize_dimension_tone(self, report: dict[str, Any]) -> None:
         dimensions = report.get("dimensions")
@@ -92,10 +116,7 @@ class InterviewEvaluator:
         if not isinstance(dimensions, list):
             return default
         # 获取有效维度 ID：优先动态模型，否则 RUBRIC_DIMENSIONS
-        if orchestrator.has_dynamic_model and orchestrator._model:
-            valid_ids = {d.id for d in orchestrator._model.rubric_dimensions}
-        else:
-            valid_ids = {d.id for d in RUBRIC_DIMENSIONS}
+        valid_ids = {d.id for d in self._rubric_dimensions(orchestrator)}
         for item in dimensions:
             if not isinstance(item, dict):
                 continue

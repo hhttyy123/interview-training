@@ -1,0 +1,82 @@
+# Paste these services into your existing server docker-compose.yml.
+# They are designed for your current root layout:
+# docker-compose.yml / nginx / my_blog / mysql_data / chem_project / ai_chem / ...
+#
+# Important:
+# - Keep these services on chem-network so the existing nginx container can reach them.
+# - Do not add another nginx service if your current nginx already owns 80/443.
+# - Compose image variables are resolved before env_file is loaded.
+#   Use one of these:
+#   1) docker compose --env-file .env.production up -d
+#   2) rename .env.production to .env next to docker-compose.yml
+#   3) replace ${WEB_IMAGE}/${SERVER_IMAGE} with literal ACR image URLs
+
+  ai-interview-web:
+    image: ${WEB_IMAGE}
+    container_name: ai-interview-web
+    restart: unless-stopped
+    networks:
+      - chem-network
+
+  ai-interview-token-api:
+    image: ${SERVER_IMAGE}
+    container_name: ai-interview-token-api
+    env_file:
+      - ./.env.production
+    command: ["python", "-m", "uvicorn", "token_server:app", "--host", "0.0.0.0", "--port", "8787"]
+    restart: unless-stopped
+    depends_on:
+      - ai-interview-livekit
+    networks:
+      - chem-network
+
+  ai-interview-agent:
+    image: ${SERVER_IMAGE}
+    container_name: ai-interview-agent
+    env_file:
+      - ./.env.production
+    command: ["python", "agent.py"]
+    restart: unless-stopped
+    depends_on:
+      - ai-interview-livekit
+      - ai-interview-token-api
+    networks:
+      - chem-network
+
+  ai-interview-livekit:
+    image: livekit/livekit-server:latest
+    container_name: ai-interview-livekit
+    command: ["--config", "/etc/livekit.yaml"]
+    ports:
+      - "7880:7880"
+      - "7881:7881"
+      - "7882:7882/udp"
+    volumes:
+      - ./ai_interview/livekit/livekit.yaml:/etc/livekit.yaml:ro
+    restart: unless-stopped
+    networks:
+      - chem-network
+
+  ai-interview-qdrant:
+    image: qdrant/qdrant:latest
+    container_name: ai-interview-qdrant
+    profiles:
+      - rag
+    volumes:
+      - ./ai_interview/data/qdrant:/qdrant/storage
+    restart: unless-stopped
+    networks:
+      - chem-network
+
+  ai-interview-embedding:
+    image: ghcr.io/huggingface/text-embeddings-inference:cpu-latest
+    container_name: ai-interview-embedding
+    profiles:
+      - rag
+    command: ["--model-id", "/models/bge-m3"]
+    volumes:
+      - ./ai_interview/models/bge-m3:/models/bge-m3:ro
+      - ./ai_interview/data/tei:/data
+    restart: unless-stopped
+    networks:
+      - chem-network

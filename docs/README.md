@@ -11,6 +11,7 @@
 - [文档状态清单](DOCUMENT_STATUS.md)：哪些文档当前有效，哪些只是参考或历史稿。
 - [技术文档索引](technical/README.md)：当前技术文档的阅读顺序。
 - [RAG 服务测试与运维手册](technical/rag-service-runbook.md)：Qdrant、BGE-M3、资料入库、检索评测、删除数据。
+- [服务器部署思路与上线检查](technical/server-deployment-runbook.md)：阿里云 ACR、Xshell、生产环境变量、端口、上线检查表。
 - [追问策略库设计](technical/follow-up-strategy-library-design.md)：追问策略、RAG 方法论库、证据槽、评价对齐的总设计。
 - [评价 Agent 对接契约](technical/evaluation-agent-contract.md)：评价 Agent 需要接收什么数据、如何使用 questionTrace。
 - [项目优化路线图](technical/project-optimization-roadmap.md)：下一步优先级和暂不建议做的事项。
@@ -34,16 +35,16 @@
 - [Triage 标签](agents/triage-labels.md)：默认 triage 标签约定。
 - [个人开发习惯文档](agents/个人开发习惯文档.md)：协作和工程偏好。
 
-## 5. 历史与归档
+## 5. 历史稿
 
-- [归档说明](archive/README.md)：已被替代的历史稿说明。
-- `archive/technical/`：早期技术方案历史稿，只作背景参考，不作为当前实现依据。
+历史稿已清理，当前文档入口只保留仍有决策价值的资料；如需回溯早期方案，请查看 Git 历史。
 
 ## 6. 阅读建议
 
 常见场景：
 
 - 要启动/测试 RAG：读 [RAG 服务测试与运维手册](technical/rag-service-runbook.md)。
+- 要部署到服务器：读 [服务器部署思路与上线检查](technical/server-deployment-runbook.md)。
 - 要接追问策略库：读 [追问策略库设计](technical/follow-up-strategy-library-design.md)。
 - 要和评价 Agent 对接：读 [评价 Agent 对接契约](technical/evaluation-agent-contract.md)。
 - 要判断下一步做什么：读 [项目优化路线图](technical/project-optimization-roadmap.md)。

@@ -12,10 +12,13 @@
 2. [rag-service-runbook.md](rag-service-runbook.md)
    RAG 服务测试与运维手册，包含 Qdrant、BGE-M3、TEI、资料入库、检索评测、删除数据、常见错误处理。
 
-3. [follow-up-strategy-library-design.md](follow-up-strategy-library-design.md)
+3. [server-deployment-runbook.md](server-deployment-runbook.md)
+   服务器部署思路与上线检查，按阿里云 ACR、Xshell、Docker Compose 的发布方式整理。
+
+4. [follow-up-strategy-library-design.md](follow-up-strategy-library-design.md)
    面试追问策略库完整设计，覆盖六阶段：追问策略骨架、RAG 方法论库、职业通用化、证据质量判断、RAG 接入追问、评价 Agent 对齐。
 
-4. [evaluation-agent-contract.md](evaluation-agent-contract.md)
+5. [evaluation-agent-contract.md](evaluation-agent-contract.md)
    评价 Agent 对接契约，说明 `EvaluationRequest`、`EvaluationResponse`、`questionTrace`、`evidenceSnapshot` 等字段。
 
 ## 2. 实时语音与 LiveKit
@@ -25,14 +28,8 @@
 - [realtime-voice-technical-debt.md](realtime-voice-technical-debt.md)
   当前实时语音链路的技术债和稳定性风险。
 
-- [实时语音对话V0原型实施方案.md](实时语音对话V0原型实施方案.md)
-  V0 原型范围、目标和约束。
-
-- [实时语音对话分步实施路线图.md](实时语音对话分步实施路线图.md)
-  实时语音链路的阶段化执行路线。
-
-- [实时语音对话项目目录框架.md](实时语音对话项目目录框架.md)
-  早期原型目录结构说明。
+- [livekit-interview-spike-technical-debt.md](livekit-interview-spike-technical-debt.md)
+  `livekit-interview-spike` 落地项目的技术债、后续优化和评价数据闭环记录。
 
 ## 3. Agent 系统长期方案
 
@@ -43,8 +40,6 @@
 
 这些不是当前第一优先级：
 
-- 早期实时语音原型文档：如果你只关心 RAG、追问策略和评价 Agent，可以暂时跳过。
-- `../archive/technical/`：历史稿，只作为背景参考。
 - 根目录的产品讨论总结：更偏产品背景，不作为当前工程落地依据。
 
 ## 5. 推荐阅读路径
@@ -54,6 +49,12 @@
 1. [rag-service-runbook.md](rag-service-runbook.md)
 2. [follow-up-strategy-library-design.md](follow-up-strategy-library-design.md) 的 RAG 阶段
 3. [evaluation-agent-contract.md](evaluation-agent-contract.md) 里的 methodology 字段映射
+
+### 做服务器部署
+
+1. [server-deployment-runbook.md](server-deployment-runbook.md)
+2. [rag-service-runbook.md](rag-service-runbook.md) 的服务器 RAG 服务部分
+3. [livekit-interview-spike-technical-debt.md](livekit-interview-spike-technical-debt.md)
 
 ### 做追问策略
 
@@ -69,5 +70,4 @@
 ### 做实时语音稳定性
 
 1. [realtime-voice-technical-debt.md](realtime-voice-technical-debt.md)
-2. [实时语音对话分步实施路线图.md](实时语音对话分步实施路线图.md)
-3. [实时语音对话V0原型实施方案.md](实时语音对话V0原型实施方案.md)
+2. [livekit-interview-spike-technical-debt.md](livekit-interview-spike-technical-debt.md)

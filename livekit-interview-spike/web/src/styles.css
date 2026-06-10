@@ -488,6 +488,58 @@ button:disabled {
   gap: 0.75rem;
 }
 
+.followup-mode-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.followup-mode-grid button {
+  display: grid;
+  align-content: start;
+  gap: 0.55rem;
+  min-height: 4.4rem;
+  padding: 0.95rem;
+  border-radius: 1.1rem;
+  color: #214f40;
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.78), rgba(236, 241, 224, 0.72));
+  text-align: left;
+  box-shadow:
+    inset 0 0 0 1px rgba(33, 79, 64, 0.1),
+    0 12px 30px rgba(32, 47, 39, 0.08);
+}
+
+.followup-mode-grid button[data-active="true"] {
+  color: #fbfcf7;
+  background:
+    radial-gradient(circle at 20% 0%, rgba(239, 183, 92, 0.38), transparent 38%),
+    #214f40;
+}
+
+.mode-card-topline {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.6rem;
+}
+
+.mode-card-topline em {
+  flex: 0 0 auto;
+  padding: 0.18rem 0.45rem;
+  border-radius: 999px;
+  color: inherit;
+  background: rgba(33, 79, 64, 0.1);
+  font-size: 0.68rem;
+  font-style: normal;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+}
+
+.followup-mode-grid button[data-active="true"] .mode-card-topline em {
+  background: rgba(251, 252, 247, 0.18);
+}
+
 .choice-grid button {
   display: grid;
   gap: 0.35rem;
@@ -900,6 +952,26 @@ h1 {
 .analysis-row > button,
 .analysis-row .file-upload-field {
   min-height: 3.4rem;
+}
+
+.jd-progress-card {
+  display: grid;
+  padding: 0.15rem 0;
+}
+
+.jd-progress-track {
+  height: 0.32rem;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(33, 79, 64, 0.1);
+}
+
+.jd-progress-track i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #214f40, #c46e44);
+  transition: width 280ms ease;
 }
 
 .compact-company-card,
@@ -1857,6 +1929,102 @@ h1 {
   box-shadow: 0 22px 60px rgba(32, 47, 39, 0.09);
 }
 
+.report-summary-strip {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(14rem, 0.65fr) auto;
+  gap: 1rem;
+  align-items: center;
+  width: 100%;
+  padding: clamp(1rem, 2vw, 1.25rem);
+  border: 1px solid rgba(33, 79, 64, 0.14);
+  border-radius: 1.1rem;
+  background:
+    radial-gradient(circle at 8% 12%, rgba(196, 110, 68, 0.13), transparent 34%),
+    linear-gradient(135deg, rgba(251, 252, 247, 0.92), rgba(239, 247, 242, 0.84));
+  box-shadow: 0 20px 54px rgba(32, 47, 39, 0.1);
+}
+
+.compact-report-summary-strip {
+  position: relative;
+  z-index: 1;
+  grid-template-columns: minmax(0, 1fr) auto;
+  width: min(100%, 48rem);
+}
+
+.report-summary-copy {
+  display: grid;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+.report-summary-copy h3 {
+  margin: 0;
+  color: #173c31;
+  font-size: clamp(1.1rem, 1.8vw, 1.45rem);
+}
+
+.report-summary-copy p {
+  margin: 0;
+  color: #405049;
+  line-height: 1.55;
+}
+
+.report-summary-meta,
+.report-summary-insights {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.report-summary-meta span,
+.report-summary-insights span {
+  border-radius: 999px;
+  padding: 0.3rem 0.62rem;
+  color: #214f40;
+  background: rgba(33, 79, 64, 0.08);
+  font-size: 0.78rem;
+  font-weight: 850;
+}
+
+.report-summary-insights {
+  align-content: center;
+}
+
+.report-summary-insights span {
+  border-radius: 0.7rem;
+  color: #8f4b32;
+  background: rgba(196, 110, 68, 0.1);
+}
+
+.report-summary-strip button {
+  white-space: nowrap;
+  color: #fff9f4;
+  background: #214f40;
+}
+
+.report-modal-backdrop {
+  z-index: 95;
+  background: rgba(17, 29, 25, 0.48);
+}
+
+.report-modal {
+  width: min(86rem, calc(100vw - 1.5rem));
+  height: min(94vh, 62rem);
+  grid-template-rows: auto auto minmax(0, 1fr);
+}
+
+.report-modal-body {
+  min-height: 0;
+  overflow: auto;
+  padding: 0 1.15rem 1.15rem;
+}
+
+.report-modal-body .report-card {
+  max-width: 72rem;
+  margin: 0 auto;
+  box-shadow: none;
+}
+
 .compact-report {
   position: relative;
   z-index: 1;
@@ -2237,6 +2405,90 @@ h1 {
   background: rgba(251, 252, 247, 0.72);
 }
 
+.debug-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.8rem;
+  margin: 0.75rem 0;
+  padding: 0.75rem;
+  border: 1px solid rgba(33, 79, 64, 0.1);
+  border-radius: 0.85rem;
+  background: rgba(255, 255, 255, 0.62);
+}
+
+.debug-toolbar div {
+  display: grid;
+  gap: 0.18rem;
+}
+
+.debug-toolbar strong {
+  color: #214f40;
+}
+
+.debug-toolbar span {
+  color: #607069;
+  font-size: 0.82rem;
+}
+
+.debug-toolbar button {
+  white-space: nowrap;
+}
+
+.planner-trace-list {
+  display: grid;
+  gap: 0.75rem;
+  margin-top: 0.75rem;
+}
+
+.planner-trace-item {
+  display: grid;
+  gap: 0.4rem;
+  padding: 0.8rem;
+  border: 1px solid rgba(40, 62, 52, 0.1);
+  border-radius: 0.85rem;
+  background: rgba(251, 252, 247, 0.86);
+  color: #34463e;
+}
+
+.planner-trace-item p {
+  margin: 0;
+  line-height: 1.55;
+}
+
+.planner-trace-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.planner-trace-head span {
+  padding: 0.18rem 0.45rem;
+  border-radius: 999px;
+  background: rgba(196, 110, 68, 0.12);
+  color: #9a4f2f;
+  font-size: 0.74rem;
+  font-weight: 800;
+}
+
+.planner-rag-matches {
+  display: grid;
+  gap: 0.25rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.planner-rag-matches li {
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.planner-trace-error {
+  color: #b54838;
+  font-weight: 800;
+}
+
 .transcript-card p {
   margin: 0;
   line-height: 1.65;
@@ -2270,6 +2522,7 @@ h1 {
   .home-workspace,
   .home-grid,
   .home-grid.two-columns,
+  .followup-mode-grid,
   .choice-grid,
   .confirm-grid {
     grid-template-columns: 1fr;
@@ -2337,6 +2590,7 @@ h1 {
   .training-dock,
   .analysis-row,
   .company-summary-strip,
+  .report-summary-strip,
   .company-detail-grid,
   .company-modal-layout,
   .config-radar-grid,
@@ -2354,6 +2608,27 @@ h1 {
 
   .history-card time {
     grid-column: 2;
+  }
+
+  .report-summary-strip {
+    align-items: stretch;
+  }
+
+  .report-summary-strip button {
+    width: 100%;
+  }
+
+  .report-modal {
+    width: calc(100vw - 0.9rem);
+    height: min(96vh, 62rem);
+  }
+
+  .debug-toolbar {
+    display: grid;
+  }
+
+  .debug-toolbar button {
+    width: 100%;
   }
 
   .company-modal-backdrop {

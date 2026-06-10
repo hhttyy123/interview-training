@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import time
+from dataclasses import dataclass
 from typing import Protocol
 
 from interview.followup.rag.embeddings import EmbeddingProvider
@@ -17,6 +19,14 @@ class NoopReranker:
         return results
 
 
+@dataclass(frozen=True)
+class RetrievalTrace:
+    results: list[RetrievalResult]
+    embedding_ms: int
+    search_ms: int
+    rerank_ms: int
+
+
 class MethodologyRetriever:
     def __init__(
         self,
@@ -30,9 +40,24 @@ class MethodologyRetriever:
         self.reranker = reranker or NoopReranker()
 
     async def retrieve(self, query: RetrievalQuery) -> list[RetrievalResult]:
+        trace = await self.retrieve_with_trace(query)
+        return trace.results
+
+    async def retrieve_with_trace(self, query: RetrievalQuery) -> RetrievalTrace:
+        embedding_started_at = time.perf_counter()
         [query_vector] = await self.embedding_provider.embed_texts([build_retrieval_query_text(query)])
+        embedding_ms = _elapsed_ms(embedding_started_at)
+        search_started_at = time.perf_counter()
         results = await self.vector_store.search(query_vector=query_vector, query=query)
-        return await self.reranker.rerank(query=query, results=results)
+        search_ms = _elapsed_ms(search_started_at)
+        rerank_started_at = time.perf_counter()
+        reranked = await self.reranker.rerank(query=query, results=results)
+        rerank_ms = _elapsed_ms(rerank_started_at)
+        return RetrievalTrace(results=reranked, embedding_ms=embedding_ms, search_ms=search_ms, rerank_ms=rerank_ms)
+
+
+def _elapsed_ms(started_at: float) -> int:
+    return int((time.perf_counter() - started_at) * 1000)
 
 
 def build_retrieval_query_text(query: RetrievalQuery) -> str:
